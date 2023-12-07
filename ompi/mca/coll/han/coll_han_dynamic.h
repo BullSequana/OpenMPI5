@@ -3,7 +3,7 @@
  * Copyright (c) 2020      The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
- * Copyright (c) 2020      Bull S.A.S. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2022      IBM Corporation. All rights reserved
  *
  * $COPYRIGHT$
@@ -103,6 +103,7 @@ typedef enum COMPONENTS {
     LIBNBC,
     TUNED,
     SM,
+    BSHARED,
     ADAPT,
     HAN,
     COMPONENTS_COUNT
@@ -118,12 +119,21 @@ extern ompi_coll_han_components ompi_coll_han_available_components[COMPONENTS_CO
 
 /* Topologic levels */
 typedef enum TOPO_LVL {
-    INTRA_NODE = 0,
+    LEAF_LEVEL = 0,
+    INTRA_NODE,
     INTER_NODE,
+    GATEWAY,
     /* Identifies the global communicator as a topologic level */
     GLOBAL_COMMUNICATOR,
     NB_TOPO_LVL
 } TOPO_LVL_T;
+
+typedef enum SPLIT_LVL {
+    SOCKET = 0,
+    NODE,
+    CLUSTER,
+    NB_SPLIT_LVL
+} SPLIT_LVL_T;
 
 /* Rule for a specific msg size
  * in a specific configuration
@@ -212,5 +222,6 @@ typedef struct mca_coll_han_collective_modules_storage_s {
 bool mca_coll_han_is_coll_dynamic_implemented(COLLTYPE_T coll_id);
 COMPONENT_T mca_coll_han_component_name_to_id(const char* name);
 int mca_coll_han_topo_lvl_name_to_id(const char *topo_level_str);
+
 
 #endif

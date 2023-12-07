@@ -15,6 +15,7 @@
  * Copyright (c) 2020      FUJITSU LIMITED.  All rights reserved.
  * Copyright (c) 2020      High Performance Computing Center Stuttgart,
  *                         University of Stuttgart.  All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -78,6 +79,8 @@ ompi_osc_sm_module_t ompi_osc_sm_module_template = {
 
         .osc_put = ompi_osc_sm_put,
         .osc_get = ompi_osc_sm_get,
+        .osc_put_notify = NULL,
+        .osc_get_notify = NULL,
         .osc_accumulate = ompi_osc_sm_accumulate,
         .osc_compare_and_swap = ompi_osc_sm_compare_and_swap,
         .osc_fetch_and_op = ompi_osc_sm_fetch_and_op,

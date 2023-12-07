@@ -1,0 +1,17 @@
+# -*- text -*-
+#
+# Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
+# $COPYRIGHT$
+#
+# Additional copyrights may follow
+#
+# $HEADER$
+#
+[flush_err_rma_sync]
+Open MPI has detected that this process has attempted a %s
+on an MPI window set up non-passive target mode in a MCA configuration
+that required to perform an MPI_Flush. This is erroneous.
+
+Please check that is done on purpose and select another osc component that
+do not need MPI_Flush for RMA notifications.
+#

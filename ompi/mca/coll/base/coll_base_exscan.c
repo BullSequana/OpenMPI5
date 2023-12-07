@@ -4,6 +4,7 @@
  *                         and Information Science. All rights reserved.
  * Copyright (c) 2018      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -23,6 +24,7 @@
 #include "ompi/mca/coll/base/coll_base_util.h"
 #include "ompi/mca/pml/pml.h"
 #include "ompi/op/op.h"
+#include "opal/runtime/opal_params.h"
 
 /*
  * ompi_coll_base_exscan_intra_linear
@@ -42,6 +44,8 @@ ompi_coll_base_exscan_intra_linear(const void *sbuf, void *rbuf, int count,
     ptrdiff_t dsize, gap;
     char *free_buffer = NULL;
     char *reduce_buffer = NULL;
+    char *true_rbuf = rbuf;
+    char *rbuf_free = NULL;
 
     rank = ompi_comm_rank(comm);
     size = ompi_comm_size(comm);
@@ -82,6 +86,22 @@ ompi_coll_base_exscan_intra_linear(const void *sbuf, void *rbuf, int count,
     reduce_buffer = free_buffer - gap;
     err = ompi_datatype_copy_content_same_ddt(dtype, count,
                                               reduce_buffer, (char*)sbuf);
+    if (OMPI_SUCCESS != err) {
+        goto error;
+    }
+
+    if (opal_scan_use_device_pointers) {
+        rbuf_free = malloc(dsize);
+        if (NULL == rbuf_free) {
+            err = OMPI_ERR_OUT_OF_RESOURCE;
+            goto error;
+        }
+        rbuf = rbuf_free - gap;
+
+        if (MPI_SUCCESS != err) {
+            goto error;
+        }
+    }
 
     /* Receive the reduced value from the prior rank */
     err = MCA_PML_CALL(recv(rbuf, count, dtype, rank - 1,
@@ -98,8 +118,21 @@ ompi_coll_base_exscan_intra_linear(const void *sbuf, void *rbuf, int count,
     err = MCA_PML_CALL(send(reduce_buffer, count, dtype, rank + 1,
                             MCA_COLL_BASE_TAG_EXSCAN,
                             MCA_PML_BASE_SEND_STANDARD, comm));
+
+    if (MPI_SUCCESS != err) {
+        goto error;
+    }
+
+
+    if (opal_scan_use_device_pointers) {
+        err = ompi_datatype_copy_content_same_ddt(dtype, count, true_rbuf, (char*)rbuf);
+    }
+
     /* Error */
   error:
+    if (NULL != rbuf_free) {
+        free(rbuf_free);
+    }
     free(free_buffer);
 
     /* All done */
@@ -148,6 +181,8 @@ int ompi_coll_base_exscan_intra_recursivedoubling(
     char *tmpsend_raw = NULL, *tmprecv_raw = NULL;
     int comm_size = ompi_comm_size(comm);
     int rank = ompi_comm_rank(comm);
+    char *rbuf_free = NULL;
+    char *true_rbuf = recvbuf;
 
     OPAL_OUTPUT((ompi_coll_base_framework.framework_output, "coll:base:exscan_intra_recursivedoubling: rank %d/%d",
                  rank, comm_size));
@@ -164,6 +199,7 @@ int ompi_coll_base_exscan_intra_recursivedoubling(
         err = OMPI_ERR_OUT_OF_RESOURCE;
         goto cleanup_and_return;
     }
+
     char *psend = tmpsend_raw - gap;
     char *precv = tmprecv_raw - gap;
     if (sendbuf != MPI_IN_PLACE) {
@@ -173,6 +209,16 @@ int ompi_coll_base_exscan_intra_recursivedoubling(
         err = ompi_datatype_copy_content_same_ddt(datatype, count, psend, recvbuf);
         if (MPI_SUCCESS != err) { goto cleanup_and_return; }
     }
+
+    if (rank > 0 && opal_scan_use_device_pointers) {
+        rbuf_free = malloc(dsize);
+        if (NULL == rbuf_free) {
+            err = OMPI_ERR_OUT_OF_RESOURCE;
+            goto cleanup_and_return;
+        }
+        recvbuf = rbuf_free - gap;
+    }
+
     int is_commute = ompi_op_is_commute(op);
     int is_first_block = 1;
 
@@ -214,7 +260,14 @@ int ompi_coll_base_exscan_intra_recursivedoubling(
         }
     }
 
+    if (rank > 0 && opal_scan_use_device_pointers) {
+        err = ompi_datatype_copy_content_same_ddt(datatype, count, true_rbuf, recvbuf);
+    }
+
 cleanup_and_return:
+    if (NULL != rbuf_free) {
+        free(rbuf_free);
+    }
     if (NULL != tmpsend_raw)
         free(tmpsend_raw);
     if (NULL != tmprecv_raw)

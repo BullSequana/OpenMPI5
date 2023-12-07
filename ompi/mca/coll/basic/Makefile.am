@@ -14,6 +14,7 @@
 # Copyright (c) 2013      Los Alamos National Security, LLC. All rights
 #                         reserved.
 # Copyright (c) 2017      IBM Corporation.  All rights reserved.
+# Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
@@ -34,19 +35,19 @@ sources = \
         coll_basic_component.c \
         coll_basic_gather.c \
         coll_basic_gatherv.c \
+        coll_basic_gatherw.c \
         coll_basic_module.c \
         coll_basic_neighbor_allgather.c \
         coll_basic_neighbor_allgatherv.c \
         coll_basic_neighbor_alltoall.c \
-        coll_basic_neighbor_alltoallv.c \
-        coll_basic_neighbor_alltoallw.c \
         coll_basic_reduce.c \
         coll_basic_reduce_scatter.c \
         coll_basic_reduce_scatter_block.c \
         coll_basic_scan.c \
         coll_basic_exscan.c \
         coll_basic_scatter.c \
-        coll_basic_scatterv.c
+        coll_basic_scatterv.c \
+        coll_basic_scatterw.c
 
 # Make the output library in this directory, and name it either
 # mca_<type>_<name>.la (for DSO builds) or libmca_<type>_<name>.la

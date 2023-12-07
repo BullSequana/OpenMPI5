@@ -15,12 +15,15 @@
 # Copyright (c) 2017      Research Organization for Information Science
 #                         and Technology (RIST). All rights reserved.
 # Copyright (c) 2017      IBM Corporation.  All rights reserved.
+# Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
 #
 # $HEADER$
 #
+
+dist_ompidata_DATA = help-mpi-coll-libnbc.txt
 
 sources = \
         coll_libnbc.h \
@@ -43,6 +46,7 @@ sources = \
 	nbc_iexscan.c \
 	nbc_igather.c \
 	nbc_igatherv.c \
+	nbc_igatherw.c \
 	nbc_ineighbor_allgather.c \
 	nbc_ineighbor_allgatherv.c \
 	nbc_ineighbor_alltoall.c \

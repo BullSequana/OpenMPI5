@@ -2,9 +2,9 @@
  * Copyright (c) 2018-2023 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
- * Copyright (c) 2020      Bull S.A.S. All rights reserved.
  * Copyright (c) 2020      Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2022      IBM Corporation. All rights reserved
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -85,6 +85,16 @@ mca_coll_han_gather_intra(const void *sbuf, int scount,
     char *reorder_buf = NULL, *reorder_rbuf = NULL;
     int err, *vranks, low_rank, low_size, *topo;
     ompi_request_t *temp_request = NULL;
+
+    if( !mca_coll_han_has_2_levels(han_module) ) {
+        opal_output_verbose(30, mca_coll_han_component.han_output,
+                             "han cannot handle gather with this communicator (not 2-levels). Fall back on another component\n");
+        /* HAN cannot work with this communicator so fallback on all collectives */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, gather);
+        return comm->c_coll->coll_gather(sbuf, scount, sdtype, rbuf,
+                                         rcount, rdtype, root,
+                                         comm, comm->c_coll->coll_gather_module);
+    }
 
     /* Create the subcommunicators */
     err = mca_coll_han_comm_create(comm, han_module);
@@ -300,6 +310,268 @@ int mca_coll_han_gather_ug_task(void *task_args)
     return OMPI_SUCCESS;
 }
 
+/**
+ * Experimental
+ * Compute recv displs & recv types for inter node gatherw
+ */
+static int
+compute_displs(int rcount,
+               struct ompi_datatype_t *rd_type,
+               struct ompi_datatype_t ***rd_types,
+               int **rd_displs,
+               int **rcounts,
+               mca_coll_han_module_t *han_module)
+{
+    int ret;
+    int up_rank, low_rank;
+    int up_size = ompi_comm_size(han_module->sub_comm[INTER_NODE]);
+    int low_size = ompi_comm_size(han_module->sub_comm[LEAF_LEVEL]);
+    int *displs;
+    int max_low_size = han_module->maximum_size[LEAF_LEVEL];
+    int id;
+    ptrdiff_t extent;
+
+    /* One datatype per rank */
+    *rd_types = (struct ompi_datatype_t **) malloc(sizeof(struct ompi_datatype_t*) * up_size);
+    *rd_displs = (int *) malloc(sizeof(int) * up_size);
+    *rcounts = (int *) malloc(sizeof(int) * up_size);
+
+    displs = (int *) malloc(sizeof(int) * max_low_size);
+
+    ompi_datatype_type_extent(rd_type, &extent);
+
+    /* Compute one datatype per node */
+    for (up_rank = 0 ; up_rank < up_size ; up_rank++) {
+
+        (*rcounts)[up_rank] = 1;
+
+        /*
+         * Compute displs of the first bloc in the global recv buffer
+         * Relative displs of the other blocs is given by the datatype
+         */
+        (*rd_displs)[up_rank] = extent * rcount
+                                * han_module->global_ranks[up_rank * max_low_size + 0];
+
+        for(low_rank = 0 ; low_rank < max_low_size ; low_rank++) {
+
+            /* ppn imbalance case : this is the end of the node */
+            if(0 > han_module->global_ranks[up_rank*max_low_size + low_rank]) {
+                break;
+            }
+
+            /* Find the block id relatively to the start of this datatype */
+            id = han_module->global_ranks[up_rank * max_low_size + low_rank]
+                 -han_module->global_ranks[up_rank * max_low_size + 0];
+
+            /* Compute displs from id */
+            displs[low_rank] = id * rcount;
+        }
+
+        /* Create the datatype for this node */
+        ret = ompi_datatype_create_indexed_block(low_size,
+                                                 rcount,
+                                                 displs,
+                                                 rd_type,
+                                                 &((*rd_types)[up_rank]));
+
+        if (OMPI_SUCCESS != ret) {
+            goto error;
+        }
+    }
+
+    /* Commit the datatypes */
+    for (up_rank = 0 ; up_rank < up_size ; up_rank++) {
+        ompi_datatype_commit((*rd_types) + up_rank);
+    }
+
+    free(displs);
+
+    return OMPI_SUCCESS;
+
+error:
+    /*
+     * Error creating the datatypes
+     * Free memory and return error
+     */
+    free(*rd_types);
+    free(displs);
+
+    return OMPI_ERROR;
+}
+
+/**
+ * Experimental
+ * Short implementation of gather
+ * using a gatherw for inter node to avoid reordering
+ */
+int
+mca_coll_han_gather_intra_noreorder(const void *sbuf, int scount,
+                                    struct ompi_datatype_t *sdtype,
+                                    void *rbuf, int rcount,
+                                    struct ompi_datatype_t *rdtype,
+                                    int root,
+                                    struct ompi_communicator_t *comm,
+                                    mca_coll_base_module_t *module)
+{
+    int w_rank = ompi_comm_rank(comm);
+    int ret;
+
+    mca_coll_han_module_t *han_module = (mca_coll_han_module_t *)module;
+
+    if( !mca_coll_han_has_2_levels(han_module) ) {
+        opal_output_verbose(30, mca_coll_han_component.han_output,
+                             "han cannot handle gather with this communicator (not 2-levels). Fall back on another component\n");
+        /* HAN cannot work with this communicator so fallback on all collectives */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, gather);
+        return comm->c_coll->coll_gather(sbuf, scount, sdtype, rbuf,
+                                         rcount, rdtype, root,
+                                         comm, comm->c_coll->coll_gather_module);
+    }
+
+    /* Topo must be initialized to know rank distribution which then is used to
+     * determine if han can be used */
+    mca_coll_han_topo_init(comm, han_module, 2);
+
+    /* Here root needs to reach all nodes on up_comm.
+     * But in case of unbalance some up_comms are smaller,
+     * as the comm_split is made on the base of low_rank */
+    if (han_module->are_ppn_imbalanced){
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                        "han cannot handle gather with this communicator. It need to fall back on another component\n"));
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, gather);
+        return comm->c_coll->coll_gather(sbuf, scount, sdtype, rbuf,
+                    rcount, rdtype, root,
+                    comm, han_module->previous_gather_module);
+    }
+
+    /* create the subcommunicators */
+    ret = mca_coll_han_comm_create_new(comm, han_module);
+
+    if( OMPI_SUCCESS != ret ) {  /* Let's hope the error is consistently returned across the entire communicator */
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                            "han cannot handle gather with this communicator. Fall back on another component\n"));
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automatically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVES(han_module, comm);
+        return comm->c_coll->coll_gather(sbuf, scount, sdtype, rbuf,
+                    rcount, rdtype, root,
+                    comm, han_module->previous_gather_module);
+    }
+
+    ompi_communicator_t *low_comm = han_module->sub_comm[LEAF_LEVEL];
+    ompi_communicator_t *up_comm = han_module->sub_comm[INTER_NODE];
+
+    /* Check if we have gatherw on up communicator */
+    if (!up_comm->c_coll->coll_gatherw) {
+        /* No gatherw for up_comm, discart this algorithm and fall back */
+        han_module->have_up_gatherw = false;
+        return comm->c_coll->coll_gather(sbuf, scount, sdtype,
+                                         rbuf, rcount, rdtype,
+                                         root, comm, module);
+    }
+
+    /* Get the 'virtual ranks' mapping corresponding to the communicators */
+    int *vranks = han_module->cached_vranks;
+    /* information about sub-communicators */
+    int low_rank = ompi_comm_rank(low_comm);
+    int low_size = ompi_comm_size(low_comm);
+    int up_size = ompi_comm_size(up_comm);
+    /* Get root ranks for low and up comms */
+    int root_low_rank, root_up_rank; /* root ranks for both sub-communicators */
+    mca_coll_han_get_ranks(vranks, root, low_size, &root_low_rank, &root_up_rank);
+
+    struct ompi_datatype_t **rd_types;
+    int *displs, *rcounts;
+
+    /* allocate the intermediary buffer
+     * to gather on leaders on the low sub communicator */
+    char *tmp_buf = NULL; // allocated memory
+    char *tmp_buf_start = NULL; // start of the data
+    if (low_rank == root_low_rank) {
+       ptrdiff_t rsize, rgap = 0;
+        rsize = opal_datatype_span(&rdtype->super,
+                    (int64_t)rcount * low_size,
+                    &rgap);
+        tmp_buf = (char *) malloc(rsize);
+        tmp_buf_start = tmp_buf - rgap;
+    }
+
+    /* 1. low gather on nodes leaders */
+    low_comm->c_coll->coll_gather((char *)sbuf,
+                     scount,
+                     sdtype,
+                     tmp_buf_start,
+                     rcount,
+                     rdtype,
+                     root_low_rank,
+                     low_comm,
+                     low_comm->c_coll->coll_gather_module);
+
+    /* 2. upper gather (inter-node) between node leaders */
+    if (low_rank == root_low_rank) {
+        if (han_module->is_mapbycore) {
+            up_comm->c_coll->coll_gather((char *)tmp_buf_start,
+                                         rcount*low_size,
+                                         rdtype,
+                                         (char *)rbuf,
+                                         rcount*low_size,
+                                         rdtype,
+                                         root_up_rank,
+                                         up_comm,
+                                         up_comm->c_coll->coll_gather_module);
+        } else {
+            /* Use datatypes to avoid reordering */
+            if (w_rank == root) {
+                ret = compute_displs(rcount, rdtype,
+                                     &rd_types, &displs, &rcounts,
+                                     han_module);
+                if (OMPI_SUCCESS != ret) {
+                    OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                                         "mca_coll_han_gather_intra_noreorder"
+                                         "::Error creating datatypes"));
+                    free(tmp_buf);
+                    return ret;
+                }
+            }
+
+            /* Use gatherw for inter-node communication */
+            up_comm->c_coll->coll_gatherw(tmp_buf_start,
+                                          rcount*low_size,
+                                          rdtype,
+                                          rbuf,
+                                          rcounts,
+                                          displs,
+                                          rd_types,
+                                          root_up_rank,
+                                          up_comm,
+                                          module);
+
+            OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                            "[%d] Han Gather:  up gatherw finish\n", w_rank));
+
+            /* Gatherw done, clean datatypes */
+            if (w_rank == root) {
+                int up_rank;
+                for (up_rank = 0 ; up_rank < up_size ; up_rank++) {
+                    ompi_datatype_destroy(&(rd_types[up_rank]));
+                }
+                free(rd_types);
+                free(rcounts);
+                free(displs);
+            }
+        }
+    }
+
+    if (tmp_buf != NULL) {
+        free(tmp_buf);
+        tmp_buf = NULL;
+        tmp_buf_start = NULL;
+    }
+
+    return OMPI_SUCCESS;
+}
+
 /* only work with regular situation (each node has equal number of processes) */
 int
 mca_coll_han_gather_intra_simple(const void *sbuf, int scount,
@@ -313,6 +585,16 @@ mca_coll_han_gather_intra_simple(const void *sbuf, int scount,
     mca_coll_han_module_t *han_module = (mca_coll_han_module_t *)module;
     int *topo, w_rank = ompi_comm_rank(comm);
     int w_size = ompi_comm_size(comm);
+
+    if( !mca_coll_han_has_2_levels(han_module) ) {
+        opal_output_verbose(30, mca_coll_han_component.han_output,
+                             "han cannot handle gather with this communicator (not 2-levels). Fall back on another component\n");
+        /* HAN cannot work with this communicator so fallback on all collectives */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, gather);
+        return comm->c_coll->coll_gather(sbuf, scount, sdtype, rbuf,
+                                         rcount, rdtype, root,
+                                         comm, comm->c_coll->coll_gather_module);
+    }
 
     /* Create the subcommunicators */
     if( OMPI_SUCCESS != mca_coll_han_comm_create_new(comm, han_module) ) {
@@ -338,7 +620,7 @@ mca_coll_han_gather_intra_simple(const void *sbuf, int scount,
                                           comm, han_module->previous_gather_module);
     }
 
-    ompi_communicator_t *low_comm = han_module->sub_comm[INTRA_NODE];
+    ompi_communicator_t *low_comm = han_module->sub_comm[LEAF_LEVEL];
     ompi_communicator_t *up_comm = han_module->sub_comm[INTER_NODE];
 
     ompi_datatype_t* dtype = (w_rank == root) ? rdtype : sdtype;
@@ -476,4 +758,175 @@ ompi_coll_han_reorder_gather(const void *sbuf,
                                             (char *)rbuf + dest_shift,
                                             (char *)sbuf + src_shift);
     }
+}
+
+/* Simple gather multi level algorithm
+ * Consecutive gather starting from leaf level to upper level
+ */
+int
+mca_coll_han_gather_intra_recursive(const void *sbuf, int scount,
+                                    struct ompi_datatype_t *sdtype,
+                                    void *rbuf, int rcount,
+                                    struct ompi_datatype_t *rdtype,
+                                    int root,
+                                    struct ompi_communicator_t *comm,
+                                    mca_coll_base_module_t *module)
+{
+    int w_rank;           /* information on ranks about the global communicator */
+    int w_size;           /* number of processes in the global communicator */
+    const int *root_rank; /* root ranks for sub-communicator */
+    const int* my_sub_rank;
+
+    ompi_communicator_t *sub_comm;
+
+    mca_coll_han_module_t *han_module = (mca_coll_han_module_t *)module;
+
+    /* Create the subcommunicator */
+    if(OMPI_SUCCESS != mca_coll_han_comm_create_multi_level(comm, han_module)){
+        opal_output_verbose(30, mca_coll_han_component.han_output,
+                            "han cannot handle gather with this commmunicator."
+                            "Fall back on another component\n");
+        /* HAN cannot work with this communicator so fallback on all collectives */
+        HAN_LOAD_FALLBACK_COLLECTIVES(han_module, comm);
+        return comm->c_coll->coll_gather(sbuf, scount, sdtype, rbuf,
+                                         rcount, rdtype, root,
+                                         comm, comm->c_coll->coll_gather_module);
+    }
+
+    if(han_module->are_ppn_imbalanced){
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                             "han cannot handle gather with this communicator (imbalanced)."
+                             "Drop HAN support in this communicator and fall back on"
+                             "another component\n"));
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, gather);
+        return comm->c_coll->coll_gather(sbuf, scount, sdtype, rbuf,
+                                         rcount, rdtype, root,
+                                         comm, comm->c_coll->coll_gather_module);
+
+    }
+
+    /* Retrieve ranks information */
+    w_rank = ompi_comm_rank(comm);
+    w_size = ompi_comm_size(comm);
+    root_rank = mca_coll_han_get_sub_ranks(han_module, root);
+    my_sub_rank = mca_coll_han_get_sub_ranks(han_module, w_rank);
+
+    ompi_datatype_t *dtype;
+    int count;
+    if(w_rank == root){
+        dtype = rdtype;
+        count = rcount;
+    }else{
+        dtype = sdtype;
+        count = scount;
+    }
+
+     /* Compute the number blocks managed by the root_rank */
+    int number_blocks[NB_TOPO_LVL-1];
+    for (int i = LEAF_LEVEL; i < GLOBAL_COMMUNICATOR; i++) {
+        number_blocks[i] = 1;
+    }
+    int topo_lvl = LEAF_LEVEL;
+    if(root_rank[LEAF_LEVEL] == my_sub_rank[LEAF_LEVEL]){
+        for(topo_lvl = LEAF_LEVEL + 1; topo_lvl < GLOBAL_COMMUNICATOR; topo_lvl++){
+            number_blocks[topo_lvl] = number_blocks[topo_lvl-1]*ompi_comm_size(han_module->sub_comm[topo_lvl - 1]);
+            if(root_rank[topo_lvl] != my_sub_rank[topo_lvl]){
+                break;
+            }
+        }
+    }
+
+    char *tmp_buf =  NULL;
+    char *tmp_buf_start = NULL;
+    if(w_rank == root){
+        if(han_module->is_mapbycore){
+            tmp_buf_start = (char*)rbuf;
+        }else{
+            ptrdiff_t rsize;
+            ptrdiff_t rgap = 0;
+            rsize = opal_datatype_span(&rdtype->super, (int64_t) rcount * w_size, &rgap);
+            tmp_buf = (char *) malloc(rsize);
+            tmp_buf_start = tmp_buf - rgap;
+        }
+    }else if(root_rank[LEAF_LEVEL] == my_sub_rank[LEAF_LEVEL]){
+        ptrdiff_t rsize;
+        ptrdiff_t rgap = 0;
+        rsize = opal_datatype_span(&sdtype->super, (int64_t) count*number_blocks[topo_lvl], &rgap);
+        tmp_buf = (char *) malloc(rsize);
+        tmp_buf_start = tmp_buf - rgap;
+    }
+
+    if (topo_lvl != LEAF_LEVEL) {
+        topo_lvl--; /* Last level where Im the root_rank */
+    }
+    /* Compute the offset to use MPI_IN_PLACE */
+    int start_offset[NB_TOPO_LVL-1];
+    start_offset[topo_lvl] = 0;
+    for(topo_lvl--; topo_lvl >= LEAF_LEVEL; topo_lvl--){
+        start_offset[topo_lvl] = start_offset[topo_lvl + 1]+ my_sub_rank[topo_lvl+1]*number_blocks[topo_lvl + 1];
+    }
+
+    ptrdiff_t extent;
+    ompi_datatype_type_extent(dtype, &extent);
+
+    if(MPI_IN_PLACE == sbuf && !han_module->is_mapbycore){
+        scount = rcount;
+        sdtype = rdtype;
+        sbuf = ((char*)rbuf) + (ptrdiff_t)(w_rank)*(ptrdiff_t)scount*extent;
+   }
+   sub_comm = han_module->sub_comm[LEAF_LEVEL];
+   sub_comm->c_coll->coll_gather(sbuf, scount, sdtype,
+                                 tmp_buf_start + start_offset[LEAF_LEVEL] * extent * scount, count,
+                                 dtype, root_rank[LEAF_LEVEL], sub_comm,
+                                 sub_comm->c_coll->coll_gather_module);
+
+   /* Then only root_rank[topo_lvl] will do gather */
+   for (int topological_lvl = LEAF_LEVEL + 1; topological_lvl < NB_TOPO_LVL - 1;
+        topological_lvl++) {
+       /* If a rank wasn't root in the previous iteration then his job is finished */
+       if (root_rank[topological_lvl - 1] != my_sub_rank[topological_lvl - 1]) {
+           break;
+       } else {
+           sub_comm = han_module->sub_comm[topological_lvl];
+           if (root_rank[topological_lvl] == my_sub_rank[topological_lvl]) {
+               sub_comm->c_coll->coll_gather(MPI_IN_PLACE, 0, NULL,
+                                             tmp_buf_start
+                                                 + start_offset[topological_lvl] * scount * extent,
+                                             number_blocks[topological_lvl] * count, dtype,
+                                             root_rank[topological_lvl], sub_comm,
+                                             sub_comm->c_coll->coll_gather_module);
+           } else {
+               sub_comm->c_coll->coll_gather(tmp_buf_start, number_blocks[topological_lvl] * count,
+                                             dtype, NULL, 0, NULL, root_rank[topological_lvl],
+                                             sub_comm, sub_comm->c_coll->coll_gather_module);
+           }
+       }
+   }
+
+    /* reorder data on root into rbuf
+     * if ranks are not mapped in topological order, data needs to be reorder
+     */
+    if (w_rank == root && !han_module->is_mapbycore) {
+       char* reorder_buf_start = tmp_buf_start;
+       ptrdiff_t rextent;
+       ompi_datatype_type_extent(dtype, &rextent);
+
+       for(int n_block = 0; n_block < w_size; n_block++){
+            ptrdiff_t block_size = rextent * (ptrdiff_t)count;
+            ptrdiff_t src_shift = block_size * n_block;
+            ptrdiff_t dest_shift = block_size * han_module->global_ranks[n_block];
+            ompi_datatype_copy_content_same_ddt(rdtype, (ptrdiff_t) rcount,
+                                                (char *) rbuf + dest_shift,
+                                                reorder_buf_start + src_shift);
+       }
+    }
+
+    if (NULL != tmp_buf) {
+        free(tmp_buf);
+    }
+
+    return OMPI_SUCCESS;
 }

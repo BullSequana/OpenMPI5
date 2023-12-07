@@ -1,6 +1,6 @@
 /* -*- Mode: C; c-basic-offset:4 ; indent-tabs-mode:nil -*- */
 /*
- * Copyright (c) 2020-2022 Bull S.A.S. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  *
  * $COPYRIGHT$
  *
@@ -67,6 +67,9 @@ mca_coll_han_algorithm_value_t*  mca_coll_han_available_algorithms[COLLCOUNT] = 
     [ALLGATHER] = (mca_coll_han_algorithm_value_t[]){
         {"intra", (fnptr_t)&mca_coll_han_allgather_intra}, // 2-level
         {"simple", (fnptr_t)&mca_coll_han_allgather_intra_simple}, // 2-level
+        {"up", (fnptr_t)&mca_coll_han_allgather_intra_up},
+        {"low", (fnptr_t)&mca_coll_han_allgather_intra_low},
+        {"split", (fnptr_t)&mca_coll_han_allgather_intra_split},
         { 0 }
     },
 };

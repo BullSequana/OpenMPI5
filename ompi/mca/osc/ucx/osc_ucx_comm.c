@@ -3,6 +3,7 @@
  * Copyright (c) 2019-2022 High Performance Computing Center Stuttgart,
  *                         University of Stuttgart.  All rights reserved.
  * Copyright (c) 2021      IBM Corporation. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -1892,3 +1893,71 @@ void ompi_osc_ucx_req_completion(void *request) {
     ompi_request_complete(&(ucx_req->super.super), true);
     assert(module->ctx->num_incomplete_req_ops >= 0);
 }
+
+#if OMPI_MPI_NOTIFICATIONS
+int ompi_osc_ucx_put_notify(const void *origin_addr, int origin_count,
+                      struct ompi_datatype_t *origin_dt,
+                      int target, ptrdiff_t target_disp, int target_count,
+                      struct ompi_datatype_t *target_dt,
+                      struct ompi_win_t *win, int notification_id) {
+
+    ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
+    opal_common_ucx_wpmem_t *mem = module->mem;
+    int ret;
+    ucs_status_t status;
+
+    ret = ompi_osc_ucx_put(origin_addr, origin_count, origin_dt, target, target_disp, target_count, target_dt, win);
+    if (OMPI_SUCCESS != ret) {
+        OSC_UCX_VERBOSE(1, "ompi_osc_ucx_put_notify failed on data transfer: %d", ret);
+        return ret;
+    }
+
+    status = opal_common_ucx_wpmem_fence(mem);
+    if (status != UCS_OK) {
+        OSC_UCX_VERBOSE(1, "ucp_worker_fence failed: %d", status);
+        return OMPI_ERROR;
+    }
+
+    int notif_val = 1;
+    ret = ompi_osc_ucx_put(&notif_val, 1, MPI_INT, target, notification_id, 1, MPI_INT, win->w_notify);
+    if (OMPI_SUCCESS != ret) {
+        OSC_UCX_VERBOSE(1, "ompi_osc_ucx_put_notify failed on notification transfer: %d", ret);
+        return ret;
+    }
+
+    return OMPI_SUCCESS;
+}
+
+int ompi_osc_ucx_get_notify(void *origin_addr, int origin_count,
+                      struct ompi_datatype_t *origin_dt,
+                      int target, ptrdiff_t target_disp, int target_count,
+                      struct ompi_datatype_t *target_dt,
+                      struct ompi_win_t *win, int notification_id) {
+
+    ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
+    opal_common_ucx_wpmem_t *mem = module->mem;
+    int ret;
+    ucs_status_t status;
+
+    ret = ompi_osc_ucx_get(origin_addr, origin_count, origin_dt, target, target_disp, target_count, target_dt, win);
+    if (OMPI_SUCCESS != ret) {
+        OSC_UCX_VERBOSE(1, "ompi_osc_ucx_get_notify failed on data transfer: %d", ret);
+        return ret;
+    }
+
+    status = opal_common_ucx_wpmem_fence(mem);
+    if (status != UCS_OK) {
+        OSC_UCX_VERBOSE(1, "ucp_worker_fence failed: %d", status);
+        return OMPI_ERROR;
+    }
+
+    int notif_val = 1;
+    ret = ompi_osc_ucx_put(&notif_val, 1, MPI_INT, target, notification_id, 1, MPI_INT, win->w_notify);
+    if (OMPI_SUCCESS != ret) {
+        OSC_UCX_VERBOSE(1, "ompi_osc_ucx_get_notify failed on notification transfer: %d", ret);
+        return ret;
+    }
+
+    return OMPI_SUCCESS;
+}
+#endif  /* OMPI_MPI_NOTIFICATIONS */

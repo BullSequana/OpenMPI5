@@ -21,7 +21,7 @@
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2016-2017 IBM Corporation.  All rights reserved.
  * Copyright (c) 2017      FUJITSU LIMITED.  All rights reserved.
- * Copyright (c) 2020      BULL S.A.S. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -160,12 +160,14 @@ int mca_coll_base_comm_select(ompi_communicator_t * comm)
             COPY(avail->ac_module, comm, exscan);
             COPY(avail->ac_module, comm, gather);
             COPY(avail->ac_module, comm, gatherv);
+            COPY(avail->ac_module, comm, gatherw);
             COPY(avail->ac_module, comm, reduce);
             COPY(avail->ac_module, comm, reduce_scatter_block);
             COPY(avail->ac_module, comm, reduce_scatter);
             COPY(avail->ac_module, comm, scan);
             COPY(avail->ac_module, comm, scatter);
             COPY(avail->ac_module, comm, scatterv);
+            COPY(avail->ac_module, comm, scatterw);
 
             COPY(avail->ac_module, comm, iallgather);
             COPY(avail->ac_module, comm, iallgatherv);
@@ -178,6 +180,7 @@ int mca_coll_base_comm_select(ompi_communicator_t * comm)
             COPY(avail->ac_module, comm, iexscan);
             COPY(avail->ac_module, comm, igather);
             COPY(avail->ac_module, comm, igatherv);
+            COPY(avail->ac_module, comm, igatherw);
             COPY(avail->ac_module, comm, ireduce);
             COPY(avail->ac_module, comm, ireduce_scatter_block);
             COPY(avail->ac_module, comm, ireduce_scatter);
@@ -202,6 +205,18 @@ int mca_coll_base_comm_select(ompi_communicator_t * comm)
             COPY(avail->ac_module, comm, scan_init);
             COPY(avail->ac_module, comm, scatter_init);
             COPY(avail->ac_module, comm, scatterv_init);
+            COPY(avail->ac_module, comm, scatterw_init);
+
+#if OMPI_MPI_PARTITIONED_COLL
+            COPY(avail->ac_module, comm, palltoall_init);
+            COPY(avail->ac_module, comm, palltoallr_init);
+            COPY(avail->ac_module, comm, palltoallv_init);
+            COPY(avail->ac_module, comm, palltoallvr_init);
+            COPY(avail->ac_module, comm, pbcast_init);
+            COPY(avail->ac_module, comm, pbcastr_init);
+            COPY(avail->ac_module, comm, pgather_init);
+            COPY(avail->ac_module, comm, pgatherr_init);
+#endif
 
             /* We can not reliably check if this comm has a topology
              * at this time. The flags are set *after* coll_select */

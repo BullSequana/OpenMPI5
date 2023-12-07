@@ -5,6 +5,7 @@
  *                         reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2022      BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -28,11 +29,16 @@
 /* alltoallv algorithm variables */
 static int coll_tuned_alltoallv_forced_algorithm = 0;
 
+/* Alltoallv Non blocking pairwise algorithm limit of mesage rate */
+static int coll_tuned_alltoallv_pairwise_limit = 1;
+
 /* valid values for coll_tuned_alltoallv_forced_algorithm */
 static const mca_base_var_enum_value_t alltoallv_algorithms[] = {
     {0, "ignore"},
     {1, "basic_linear"},
     {2, "pairwise"},
+    {3, "shifted_pairwise"},
+    {4, "bruck"},
     {0, NULL}
 };
 
@@ -71,7 +77,7 @@ int ompi_coll_tuned_alltoallv_intra_check_forced_init(coll_tuned_force_algorithm
                                         "alltoallv_algorithm",
                                         "Which alltoallv algorithm is used. "
                                         "Can be locked down to choice of: 0 ignore, "
-                                        "1 basic linear, 2 pairwise. "
+                                        "1 basic linear, 2 pairwise, 3 Shifted pairwise, 4 bruck. "
                                         "Only relevant if coll_tuned_use_dynamic_rules is true.",
                                         MCA_BASE_VAR_TYPE_INT, new_enum, 0, MCA_BASE_VAR_FLAG_SETTABLE,
                                         OPAL_INFO_LVL_5,
@@ -83,6 +89,16 @@ int ompi_coll_tuned_alltoallv_intra_check_forced_init(coll_tuned_force_algorithm
         return mca_param_indices->algorithm_param_index;
     }
 
+    coll_tuned_alltoallv_pairwise_limit = 1;
+    (void) mca_base_component_var_register(&mca_coll_tuned_component.super.collm_version,
+                                           "alltoallv_pairwise_limit",
+                                           "Number of simultaneous messages autorized for"
+                                           "alltoallv shifted pairwise algorithm.",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0,
+                                           MCA_BASE_VAR_FLAG_SETTABLE,
+                                           OPAL_INFO_LVL_5,
+                                           MCA_BASE_VAR_SCOPE_ALL,
+                                           &coll_tuned_alltoallv_pairwise_limit);
     return (MPI_SUCCESS);
 }
 
@@ -113,6 +129,15 @@ int ompi_coll_tuned_alltoallv_intra_do_this(const void *sbuf, const int *scounts
         return ompi_coll_base_alltoallv_intra_pairwise(sbuf, scounts, sdisps, sdtype,
                                                        rbuf, rcounts, rdisps, rdtype,
                                                        comm, module);
+    case (3):
+        return ompi_coll_base_alltoallv_intra_shifted_pairwise(sbuf, scounts, sdisps,
+                                                               sdtype, rbuf, rcounts,
+                                                               rdisps, rdtype, comm,
+                                                               module, coll_tuned_alltoallv_pairwise_limit);
+    case (4):
+        return ompi_coll_base_alltoallv_intra_bruck(sbuf, scounts, sdisps, sdtype,
+                                                    rbuf, rcounts, rdisps, rdtype,
+                                                    comm, module);
     }  /* switch */
     OPAL_OUTPUT((ompi_coll_tuned_stream,
                  "coll:tuned:alltoall_intra_do_this attempt to select "

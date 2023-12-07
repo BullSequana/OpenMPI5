@@ -10,6 +10,7 @@
  * Copyright (c) 2004-2005 The Regents of the University of California.
  *                         All rights reserved.
  * Copyright (c) 2010-2012 Sandia National Laboratories.  All rights reserved.
+ * Copyright (c) 2015-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -250,9 +251,8 @@ ompi_mtl_portals4_get_proc(struct ompi_communicator_t *comm, int rank)
 static inline ptl_process_t
 ompi_mtl_portals4_get_peer(struct ompi_communicator_t *comm, int rank)
 {
-    return *((ptl_process_t*)(ompi_mtl_portals4_get_proc(comm, rank)->proc_endpoints[OMPI_PROC_ENDPOINT_TAG_PORTALS4]));
+    return *((ptl_process_t*)(ompi_mtl_portals4_get_proc_group(comm->c_remote_group, rank)->proc_endpoints[OMPI_PROC_ENDPOINT_TAG_PORTALS4]));
 }
-
 
 /* MTL interface functions */
 extern int ompi_mtl_portals4_finalize(struct mca_mtl_base_module_t *mtl);

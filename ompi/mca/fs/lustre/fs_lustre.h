@@ -13,6 +13,7 @@
  * Copyright (c) 2015-2018 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2016-2017 IBM Corporation. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -33,6 +34,13 @@ extern int mca_fs_lustre_stripe_size;
 extern int mca_fs_lustre_stripe_width;
 
 BEGIN_C_DECLS
+
+/* Include sys/mount.h before lustreapi.h
+ * to avoid conflic declarations with linux/fs.h
+ */
+#ifdef HAVE_SYS_MOUNT_H
+#include <sys/mount.h>
+#endif
 
 #include <lustre/lustreapi.h>
 #include <lustre/lustre_user.h>

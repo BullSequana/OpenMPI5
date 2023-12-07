@@ -16,6 +16,7 @@
  *                         reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -166,6 +167,14 @@ BEGIN_C_DECLS
                                      struct ompi_communicator_t *comm,
                                      mca_coll_base_module_t *module);
 
+    int mca_coll_basic_gatherw_intra(const void *sbuf, int scount,
+                                     struct ompi_datatype_t *sdtype,
+                                     void *rbuf, const int *rcounts, const int *disps,
+                                     struct ompi_datatype_t **rdtypes,
+                                     int root,
+                                     struct ompi_communicator_t *comm,
+                                     mca_coll_base_module_t *module);
+
     int mca_coll_basic_gatherv_inter(const void *sbuf, int scount,
                                      struct ompi_datatype_t *sdtype,
                                      void *rbuf, const int *rcounts, const int *disps,
@@ -255,6 +264,15 @@ BEGIN_C_DECLS
                                       int root,
                                       struct ompi_communicator_t *comm,
                                       mca_coll_base_module_t *module);
+
+    int mca_coll_basic_scatterw_intra(const void *sbuf, const int *scounts, const int *disps,
+                                      struct ompi_datatype_t **sdtypes,
+                                      void *rbuf, int rcount,
+                                      struct ompi_datatype_t *rdtype,
+                                      int root,
+                                      struct ompi_communicator_t *comm,
+                                      const mca_coll_base_module_t *module);
+
 
      int mca_coll_basic_neighbor_allgather(const void *sbuf, int scount,
                                            struct ompi_datatype_t *sdtype, void *rbuf,

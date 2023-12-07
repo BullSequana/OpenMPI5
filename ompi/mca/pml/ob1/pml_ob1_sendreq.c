@@ -22,6 +22,7 @@
  * Copyright (c) 2018-2019 Triad National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2022      IBM Corporation.  All rights reserved.
+ * Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -501,20 +502,31 @@ int mca_pml_ob1_send_request_start_buffered(
     struct iovec iov;
     unsigned int iov_count;
     size_t max_data, req_bytes_delivered;
-    int rc;
+    int flags, rc;
+
+    flags = MCA_BTL_DES_FLAGS_PRIORITY | MCA_BTL_DES_FLAGS_BTL_OWNERSHIP;
+    flags |= MCA_BTL_DES_FLAGS_SIGNAL;
+
+    /* Ignore btl device choice */
+    if (sendreq->btl_device_id != UINT64_MAX)
+	    flags |= MCA_BTL_DES_FLAGS_MESSAGE;
 
     if (OPAL_UNLIKELY(need_ext_match)) {
         hdr_size = sizeof (hdr->hdr_ext_rndv);
     }
 
     /* allocate descriptor */
-    mca_bml_base_alloc(bml_btl, &des, MCA_BTL_NO_ORDER, hdr_size + size,
-                       MCA_BTL_DES_FLAGS_PRIORITY | MCA_BTL_DES_FLAGS_BTL_OWNERSHIP |
-                       MCA_BTL_DES_FLAGS_SIGNAL);
+    mca_bml_base_alloc(bml_btl, &des, MCA_BTL_NO_ORDER, hdr_size + size, flags);
     if( OPAL_UNLIKELY(NULL == des) ) {
         return OMPI_ERR_OUT_OF_RESOURCE;
     }
     segment = des->des_segments;
+
+    /* report btl device into btl descriptor */
+    if (sendreq->btl_device_id != UINT64_MAX)
+	    des->btl_device_id = sendreq->btl_device_id;
+    else
+	    sendreq->btl_device_id = des->btl_device_id;
 
     /* pack the data into the BTL supplied buffer */
     iov.iov_base = (IOVBASE_TYPE*)((unsigned char*)segment->seg_addr.pval + hdr_size);
@@ -651,19 +663,31 @@ int mca_pml_ob1_send_request_start_copy( mca_pml_ob1_send_request_t* sendreq,
             MCA_PML_OB1_SEND_REQUEST_RESET(sendreq);
         }
     } else {
+	int flags = MCA_BTL_DES_FLAGS_PRIORITY | MCA_BTL_DES_FLAGS_BTL_OWNERSHIP;
+    
+	/* Ignore btl device choice */
+	if (sendreq->btl_device_id != UINT64_MAX)
+	    flags |= MCA_BTL_DES_FLAGS_MESSAGE;
+
         /* allocate descriptor */
         if (OPAL_UNLIKELY(need_ext_match)) {
             hdr_size += sizeof (hdr->hdr_cid);
         }
 
-        mca_bml_base_alloc (bml_btl, &des, MCA_BTL_NO_ORDER, hdr_size + size,
-                            MCA_BTL_DES_FLAGS_PRIORITY | MCA_BTL_DES_FLAGS_BTL_OWNERSHIP);
+        mca_bml_base_alloc (bml_btl, &des, MCA_BTL_NO_ORDER, hdr_size + size, flags);
     }
+
     if( OPAL_UNLIKELY(NULL == des) ) {
         return OMPI_ERR_OUT_OF_RESOURCE;
     }
 
     segment = des->des_segments;
+    
+    /* report btl device into btl descriptor */
+    if (sendreq->btl_device_id != UINT64_MAX)
+	    des->btl_device_id = sendreq->btl_device_id;
+    else
+	    sendreq->btl_device_id = des->btl_device_id;
 
     if(size > 0) {
         /* pack the data into the supplied buffer */
@@ -753,7 +777,13 @@ int mca_pml_ob1_send_request_start_prepare( mca_pml_ob1_send_request_t* sendreq,
     mca_btl_base_segment_t* segment;
     mca_pml_ob1_hdr_t* hdr;
     mca_pml_ob1_match_hdr_t *hdr_match;
-    int rc;
+    int flags, rc;
+
+    flags = MCA_BTL_DES_FLAGS_PRIORITY | MCA_BTL_DES_FLAGS_BTL_OWNERSHIP;
+    
+    /* Ignore btl device choice */
+    if (sendreq->btl_device_id != UINT64_MAX)
+	    flags |= MCA_BTL_DES_FLAGS_MESSAGE;
 
     if (OPAL_UNLIKELY(need_ext_match)) {
         hdr_size += sizeof (hdr->hdr_cid);
@@ -762,12 +792,18 @@ int mca_pml_ob1_send_request_start_prepare( mca_pml_ob1_send_request_t* sendreq,
     /* prepare descriptor */
     mca_bml_base_prepare_src (bml_btl, &sendreq->req_send.req_base.req_convertor,
                               MCA_BTL_NO_ORDER, hdr_size, &size,
-                              MCA_BTL_DES_FLAGS_PRIORITY | MCA_BTL_DES_FLAGS_BTL_OWNERSHIP,
+                              flags,
                               &des);
     if( OPAL_UNLIKELY(NULL == des) ) {
         return OMPI_ERR_OUT_OF_RESOURCE;
     }
     segment = des->des_segments;
+    
+    /* report btl device into btl descriptor */
+    if (sendreq->btl_device_id != UINT64_MAX)
+	    des->btl_device_id = sendreq->btl_device_id;
+    else
+	    sendreq->btl_device_id = des->btl_device_id;
 
     /* build match header */
     hdr = (mca_pml_ob1_hdr_t*)segment->seg_addr.pval;
@@ -828,7 +864,7 @@ int mca_pml_ob1_send_request_start_rdma( mca_pml_ob1_send_request_t* sendreq,
     mca_pml_ob1_hdr_t *hdr;
     mca_pml_ob1_rget_hdr_t *hdr_rget;
     void *data_ptr;
-    int rc;
+    int flags, rc;
 
     bml_btl = sendreq->req_rdma[0].bml_btl;
     if (!(bml_btl->btl_flags & (MCA_BTL_FLAGS_GET | MCA_BTL_FLAGS_ACCELERATOR_GET))) {
@@ -865,15 +901,26 @@ int mca_pml_ob1_send_request_start_rdma( mca_pml_ob1_send_request_t* sendreq,
     reg_size = bml_btl->btl->btl_registration_handle_size;
     hdr_size += reg_size;
 
+    flags = MCA_BTL_DES_FLAGS_PRIORITY | MCA_BTL_DES_FLAGS_BTL_OWNERSHIP;
+    flags |= MCA_BTL_DES_FLAGS_SIGNAL;
+
+    /* Ignore btl device choice */
+    if (sendreq->btl_device_id != UINT64_MAX)
+	    flags |= MCA_BTL_DES_FLAGS_MESSAGE;
+
     /* allocate space for get hdr + segment list */
-    mca_bml_base_alloc(bml_btl, &des, MCA_BTL_NO_ORDER, hdr_size,
-                       MCA_BTL_DES_FLAGS_PRIORITY | MCA_BTL_DES_FLAGS_BTL_OWNERSHIP |
-                       MCA_BTL_DES_FLAGS_SIGNAL);
+    mca_bml_base_alloc(bml_btl, &des, MCA_BTL_NO_ORDER, hdr_size, flags);
     if( OPAL_UNLIKELY(NULL == des) ) {
         /* NTH: no need to reset the converter here. it will be reset before it is retried */
         MCA_PML_OB1_RDMA_FRAG_RETURN(frag);
         return OMPI_ERR_OUT_OF_RESOURCE;
     }
+    
+    /* report btl device into btl descriptor */
+    if (sendreq->btl_device_id != UINT64_MAX)
+	    des->btl_device_id = sendreq->btl_device_id;
+    else
+	    sendreq->btl_device_id = des->btl_device_id;
 
     /* save the fragment for get->put fallback */
     sendreq->rdma_frag = frag;
@@ -940,7 +987,13 @@ int mca_pml_ob1_send_request_start_rndv( mca_pml_ob1_send_request_t* sendreq,
     mca_btl_base_segment_t* segment;
     mca_pml_ob1_hdr_t* hdr;
     mca_pml_ob1_rendezvous_hdr_t *hdr_rndv;
-    int rc;
+    int allocflags, rc;
+
+    allocflags = MCA_BTL_DES_FLAGS_PRIORITY | MCA_BTL_DES_FLAGS_BTL_OWNERSHIP;
+
+    /* Ignore btl device choice */
+    if (sendreq->btl_device_id != UINT64_MAX)
+	    allocflags |= MCA_BTL_DES_FLAGS_MESSAGE;
 
     if (OPAL_UNLIKELY(need_ext_match)) {
         hdr_size = sizeof (hdr->hdr_ext_rndv);
@@ -948,8 +1001,8 @@ int mca_pml_ob1_send_request_start_rndv( mca_pml_ob1_send_request_t* sendreq,
 
     /* prepare descriptor */
     if(size == 0) {
-        mca_bml_base_alloc (bml_btl, &des, MCA_BTL_NO_ORDER, hdr_size, MCA_BTL_DES_FLAGS_PRIORITY |
-                            MCA_BTL_DES_FLAGS_BTL_OWNERSHIP);
+        mca_bml_base_alloc (bml_btl, &des, MCA_BTL_NO_ORDER, hdr_size,
+                            allocflags);
     } else {
         MEMCHECKER(
             memchecker_call(&opal_memchecker_base_mem_defined,
@@ -959,8 +1012,8 @@ int mca_pml_ob1_send_request_start_rndv( mca_pml_ob1_send_request_t* sendreq,
         );
         mca_bml_base_prepare_src (bml_btl, &sendreq->req_send.req_base.req_convertor,
                                   MCA_BTL_NO_ORDER, hdr_size, &size,
-                                  MCA_BTL_DES_FLAGS_PRIORITY | MCA_BTL_DES_FLAGS_BTL_OWNERSHIP |
-                                  MCA_BTL_DES_FLAGS_SIGNAL, &des);
+                                  allocflags | MCA_BTL_DES_FLAGS_SIGNAL,
+                                  &des );
         MEMCHECKER(
             memchecker_call(&opal_memchecker_base_mem_noaccess,
                             sendreq->req_send.req_base.req_addr,
@@ -973,6 +1026,12 @@ int mca_pml_ob1_send_request_start_rndv( mca_pml_ob1_send_request_t* sendreq,
         return OMPI_ERR_OUT_OF_RESOURCE;
     }
     segment = des->des_segments;
+    
+    /* report btl device into btl descriptor */
+    if (sendreq->btl_device_id != UINT64_MAX)
+	    des->btl_device_id = sendreq->btl_device_id;
+    else
+	    sendreq->btl_device_id = des->btl_device_id;
 
     /* build hdr */
     hdr = (mca_pml_ob1_hdr_t*)segment->seg_addr.pval;
@@ -1114,7 +1173,7 @@ mca_pml_ob1_send_request_schedule_once(mca_pml_ob1_send_request_t* sendreq)
           sendreq->req_pipeline_depth < mca_pml_ob1.send_pipeline_depth)) {
         mca_pml_ob1_frag_hdr_t* hdr;
         mca_btl_base_descriptor_t* des;
-        int rc, btl_idx;
+        int flags, rc, btl_idx;
         size_t size, offset, data_remaining = 0;
         mca_bml_base_btl_t* bml_btl;
 
@@ -1176,10 +1235,18 @@ cannot_pack:
                             sendreq->req_send.req_base.req_count,
                             sendreq->req_send.req_base.req_datatype);
         );
+
+	flags = MCA_BTL_DES_FLAGS_BTL_OWNERSHIP;
+	flags |= MCA_BTL_DES_SEND_ALWAYS_CALLBACK;
+	flags |= MCA_BTL_DES_FLAGS_SIGNAL;
+
+	/* Ignore btl device choice */
+	if (sendreq->btl_device_id != UINT64_MAX)
+		flags |= MCA_BTL_DES_FLAGS_MESSAGE;
+
         mca_bml_base_prepare_src(bml_btl, &sendreq->req_send.req_base.req_convertor,
                                  MCA_BTL_NO_ORDER, sizeof(mca_pml_ob1_frag_hdr_t),
-                                 &size, MCA_BTL_DES_FLAGS_BTL_OWNERSHIP | MCA_BTL_DES_SEND_ALWAYS_CALLBACK |
-                                 MCA_BTL_DES_FLAGS_SIGNAL, &des);
+                                 &size, flags, &des);
         MEMCHECKER(
             memchecker_call(&opal_memchecker_base_mem_noaccess,
                             sendreq->req_send.req_base.req_addr,
@@ -1197,6 +1264,12 @@ cannot_pack:
             }
             continue;
         }
+    
+	/* report btl device into btl descriptor */
+	if (sendreq->btl_device_id != UINT64_MAX)
+	    des->btl_device_id = sendreq->btl_device_id;
+	else
+	    sendreq->btl_device_id = des->btl_device_id;
 
         des->des_cbfunc = mca_pml_ob1_frag_completion;
         des->des_cbdata = sendreq;
@@ -1355,7 +1428,13 @@ int mca_pml_ob1_send_request_put_frag( mca_pml_ob1_rdma_frag_t *frag )
 
         if (NULL == frag->local_handle) {
             /* Not already registered. Register the region with the BTL. */
-            mca_bml_base_register_mem (bml_btl, frag->local_address, frag->rdma_length, 0,
+            uint32_t flag = 0;
+#if OPAL_CUDA_GDR_SUPPORT
+            if (sendreq->req_send.req_base.req_convertor.flags & CONVERTOR_ACCELERATOR) {
+                flag |= MCA_BTL_REG_FLAG_CUDA_GPU_MEM;
+            }
+#endif /* OPAL_CUDA_GDR_SUPPORT */
+            mca_bml_base_register_mem (bml_btl, frag->local_address, frag->rdma_length, flag,
                                        &frag->local_handle);
 
             if (OPAL_UNLIKELY(NULL == frag->local_handle)) {
@@ -1365,8 +1444,11 @@ int mca_pml_ob1_send_request_put_frag( mca_pml_ob1_rdma_frag_t *frag )
             }
 
             local_handle = frag->local_handle;
+	    
         }
     }
+	    
+    mca_bml_base_set_multirail_device_id(bml_btl, local_handle, sendreq->btl_device_id);
 
     PERUSE_TRACE_COMM_OMPI_EVENT( PERUSE_COMM_REQ_XFER_CONTINUE,
                                   &(((mca_pml_ob1_send_request_t*)frag->rdma_req)->req_send.req_base), frag->rdma_length, PERUSE_SEND );

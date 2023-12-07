@@ -9,6 +9,7 @@
 #                         University of Stuttgart.  All rights reserved.
 # Copyright (c) 2004-2005 The Regents of the University of California.
 #                         All rights reserved.
+# Copyright (c) 2020-2023 BULL S.A.S. All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
@@ -20,6 +21,8 @@ dist_ompidata_DATA = base/help-mca-coll-base.txt
 
 headers += \
         base/base.h \
+        base/coll_base_dynamic_file.h \
+        base/coll_base_dynamic_rules.h \
         base/coll_tags.h \
         base/coll_base_topo.h \
         base/coll_base_util.h \
@@ -36,19 +39,23 @@ libmca_coll_la_SOURCES += \
         base/coll_base_allgather.c \
         base/coll_base_allgatherv.c \
         base/coll_base_util.c \
+        base/coll_base_dynamic_file.c \
+        base/coll_base_dynamic_rules.c \
         base/coll_base_allreduce.c \
         base/coll_base_alltoall.c \
         base/coll_base_gather.c \
         base/coll_base_alltoallv.c \
+        base/coll_base_alltoallw.c \
         base/coll_base_reduce.c \
         base/coll_base_barrier.c \
         base/coll_base_reduce_scatter.c \
         base/coll_base_reduce_scatter_block.c \
         base/coll_base_exscan.c \
-        base/coll_base_scan.c
+        base/coll_base_scan.c \
+        base/coll_base_neighbor_alltoallv.c \
+        base/coll_base_neighbor_alltoallw.c
 
 if WANT_FT_MPI
 libmca_coll_la_SOURCES += \
         base/coll_base_agree_noft.c
 endif # WANT_FT_MPI
-

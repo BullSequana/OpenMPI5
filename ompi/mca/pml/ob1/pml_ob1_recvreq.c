@@ -24,6 +24,7 @@
  * Copyright (c) 2022      Amazon.com, Inc. or its affiliates.  All Rights reserved.
  * Copyright (c) 2021      Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2019-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -1070,7 +1071,14 @@ int mca_pml_ob1_recv_request_schedule_once( mca_pml_ob1_recv_request_t* recvreq,
         OPAL_THREAD_UNLOCK(&recvreq->lock);
 
         if (btl->btl_register_mem) {
-            mca_bml_base_register_mem (bml_btl, data_ptr, size, MCA_BTL_REG_FLAG_REMOTE_WRITE,
+            uint32_t flag = MCA_BTL_REG_FLAG_REMOTE_WRITE;
+#if OPAL_CUDA_GDR_SUPPORT
+            if (recvreq->req_recv.req_base.req_convertor.flags & CONVERTOR_ACCELERATOR) {
+                flag |= MCA_BTL_REG_FLAG_CUDA_GPU_MEM;
+            }
+#endif /* OPAL_CUDA_GDR_SUPPORT */
+
+            mca_bml_base_register_mem (bml_btl, data_ptr, size, flag,
                                        &frag->local_handle);
             if (OPAL_UNLIKELY(NULL == frag->local_handle)) {
                 MCA_PML_OB1_RDMA_FRAG_RETURN(frag);

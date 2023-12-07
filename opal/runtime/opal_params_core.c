@@ -27,6 +27,7 @@
  * Copyright (c) 2022      Advanced Micro Devices, Inc. All rights reserved.
  * Copyright (c) 2022      Computer Architecture and VLSI Systems (CARV)
  *                         Laboratory, ICS Forth. All rights reserved.
+ * Copyright (c) 2022-2023 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -69,6 +70,16 @@ bool opal_timing_overhead = true;
 bool opal_built_with_cuda_support = OPAL_INT_TO_BOOL(OPAL_CUDA_SUPPORT);
 bool opal_cuda_runtime_initialized = false;
 bool opal_cuda_support = false;
+bool opal_copies_fallback_on_pml = false;
+bool opal_reduce_use_device_pointers = false;
+bool opal_ireduce_use_device_pointers = false;
+bool opal_allreduce_use_device_pointers = false;
+bool opal_iallreduce_use_device_pointers = false;
+bool opal_scan_use_device_pointers = false;
+bool opal_reduce_scatter_use_device_pointers = false;
+bool opal_ireduce_scatter_use_device_pointers = false;
+bool opal_ireduce_scatter_block_use_device_pointers = false;
+bool opal_iallgatherv_use_device_pointers = false;
 bool opal_warn_on_missing_libcuda = true;
 
 bool opal_built_with_rocm_support = OPAL_INT_TO_BOOL(OPAL_ROCM_SUPPORT);
@@ -274,6 +285,124 @@ int opal_register_util_params(void)
         return ret;
     }
 
+    /* Do not delegate by default as it can cause little overhead on host buffers */
+    opal_copies_fallback_on_pml = false;
+    ret = mca_base_var_register("opal", "opal", NULL, "copies_fallback_on_pml",
+                                "Whether delegate device copies support to PML, useful for "
+                                "collective operations with device buffers",
+                                MCA_BASE_VAR_TYPE_BOOL, NULL, 0, MCA_BASE_VAR_FLAG_SETTABLE,
+                                OPAL_INFO_LVL_3, MCA_BASE_VAR_SCOPE_ALL_EQ,
+                                &opal_copies_fallback_on_pml);
+    if (0 > ret) {
+        return ret;
+    }
+
+    /* Use device pointers in reduce collectives */
+    opal_reduce_use_device_pointers = false;
+    ret = mca_base_var_register(
+        "opal", "opal", NULL, "reduce_can_use_device_pointers",
+        "To activate if device pointers are used in reduce collectives",
+        MCA_BASE_VAR_TYPE_BOOL, NULL, 0, MCA_BASE_VAR_FLAG_SETTABLE, OPAL_INFO_LVL_3,
+        MCA_BASE_VAR_SCOPE_ALL_EQ, &opal_reduce_use_device_pointers);
+    if (0 > ret) {
+        return ret;
+    }
+
+    /* Use device pointers in ireduce collectives */
+    opal_ireduce_use_device_pointers = false;
+    ret = mca_base_var_register(
+        "opal", "opal", NULL, "ireduce_can_use_device_pointers",
+        "To activate if device pointers are used in non-blocking reduce collectives",
+        MCA_BASE_VAR_TYPE_BOOL, NULL, 0, MCA_BASE_VAR_FLAG_SETTABLE, OPAL_INFO_LVL_3,
+        MCA_BASE_VAR_SCOPE_ALL_EQ, &opal_ireduce_use_device_pointers);
+    if (0 > ret) {
+        return ret;
+    }
+
+    /* Use device pointers in allreduce collectives */
+    opal_allreduce_use_device_pointers = false;
+    ret = mca_base_var_register(
+        "opal", "opal", NULL, "allreduce_can_use_device_pointers",
+        "To activate if device pointers are used in allreduce collectives. Activate reduce_can_use_device_pointers MCA parameter.",
+        MCA_BASE_VAR_TYPE_BOOL, NULL, 0, MCA_BASE_VAR_FLAG_SETTABLE, OPAL_INFO_LVL_3,
+        MCA_BASE_VAR_SCOPE_ALL_EQ, &opal_allreduce_use_device_pointers);
+    if (0 > ret) {
+        return ret;
+    }
+    /* Allreduce can rely on reduce + bcast */
+    if (opal_allreduce_use_device_pointers) {
+        opal_reduce_use_device_pointers = true;
+    }
+
+    opal_iallreduce_use_device_pointers = false;
+    ret = mca_base_var_register(
+        "opal", "opal", NULL, "iallreduce_can_use_device_pointers",
+        "To activate if device pointers are used in non-blocking allreduce collectives.",
+        MCA_BASE_VAR_TYPE_BOOL, NULL, 0, MCA_BASE_VAR_FLAG_SETTABLE, OPAL_INFO_LVL_3,
+        MCA_BASE_VAR_SCOPE_ALL_EQ, &opal_iallreduce_use_device_pointers);
+    if (0 > ret) {
+        return ret;
+    }
+
+    /* Use device pointers in scan collectives */
+    opal_scan_use_device_pointers = false;
+    ret = mca_base_var_register(
+        "opal", "opal", NULL, "scan_can_use_device_pointers",
+        "To activate if device pointers are used in scan/exscan collectives",
+        MCA_BASE_VAR_TYPE_BOOL, NULL, 0, MCA_BASE_VAR_FLAG_SETTABLE, OPAL_INFO_LVL_3,
+        MCA_BASE_VAR_SCOPE_ALL_EQ, &opal_scan_use_device_pointers);
+    if (0 > ret) {
+        return ret;
+    }
+
+    /* Use device pointers in reduce_scatter collectives */
+    opal_reduce_scatter_use_device_pointers = false;
+    ret = mca_base_var_register(
+        "opal", "opal", NULL, "reduce_scatter_can_use_device_pointers",
+        "To activate if device pointers are used in "
+        "reduce_scatter/reduce_scatter_block collectives. Activate reduce_can_use_device_pointers MCA parameter.",
+        MCA_BASE_VAR_TYPE_BOOL, NULL, 0, MCA_BASE_VAR_FLAG_SETTABLE, OPAL_INFO_LVL_3,
+        MCA_BASE_VAR_SCOPE_ALL_EQ, &opal_reduce_scatter_use_device_pointers);
+    if (0 > ret) {
+        return ret;
+    }
+    if (opal_reduce_scatter_use_device_pointers) {
+        opal_reduce_use_device_pointers = true;
+    }
+
+    opal_ireduce_scatter_use_device_pointers = false;
+    ret = mca_base_var_register(
+        "opal", "opal", NULL, "ireduce_scatter_can_use_device_pointers",
+        "To activate if device pointers are used in non-blocking"
+        "reduce_scatter collectives.",
+        MCA_BASE_VAR_TYPE_BOOL, NULL, 0, MCA_BASE_VAR_FLAG_SETTABLE, OPAL_INFO_LVL_3,
+        MCA_BASE_VAR_SCOPE_ALL_EQ, &opal_ireduce_scatter_use_device_pointers);
+    if (0 > ret) {
+        return ret;
+    }
+
+    opal_ireduce_scatter_block_use_device_pointers = false;
+    ret = mca_base_var_register(
+        "opal", "opal", NULL, "ireduce_scatter_block_can_use_device_pointers",
+        "To activate if device pointers are used in non-blocking"
+        "reduce_scatter_block collectives.",
+        MCA_BASE_VAR_TYPE_BOOL, NULL, 0, MCA_BASE_VAR_FLAG_SETTABLE, OPAL_INFO_LVL_3,
+        MCA_BASE_VAR_SCOPE_ALL_EQ, &opal_ireduce_scatter_block_use_device_pointers);
+    if (0 > ret) {
+        return ret;
+    }
+
+    opal_iallgatherv_use_device_pointers = false;
+    ret = mca_base_var_register(
+        "opal", "opal", NULL, "iallgatherv_can_use_device_pointers",
+        "To activate if device pointers are used in non-blocking allgatherv collectives",
+        MCA_BASE_VAR_TYPE_BOOL, NULL, 0, MCA_BASE_VAR_FLAG_SETTABLE, OPAL_INFO_LVL_3,
+        MCA_BASE_VAR_SCOPE_ALL_EQ, &opal_iallgatherv_use_device_pointers);
+    if (0 > ret) {
+        return ret;
+    }
+
+
     /* CUDA support */
 
     ret = mca_base_var_register("opal", "opal", NULL, "built_with_cuda_support",
@@ -286,7 +415,7 @@ int opal_register_util_params(void)
     }
 
     /* Current default is to enable CUDA support if it is built into library */
-    opal_cuda_support = opal_built_with_cuda_support;
+    opal_cuda_support = false;
     ret = mca_base_var_register("opal", "opal", NULL, "cuda_support",
                                 "Whether CUDA GPU buffer support is enabled or not",
                                 MCA_BASE_VAR_TYPE_BOOL, NULL, 0, MCA_BASE_VAR_FLAG_SETTABLE,

@@ -3,6 +3,7 @@
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2014-2015 NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2024      BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -127,6 +128,7 @@ typedef struct mca_coll_cuda_component_t {
 
     int priority; /* Priority of this component */
     int disable_cuda_coll;  /* Force disable of the CUDA collective component */
+    char enable_tmp_buf_touch_pages; /* Enable touch pages on tmp buffers */
 } mca_coll_cuda_component_t;
 
 /* Globally exported variables */

@@ -16,6 +16,7 @@
  * Copyright (c) 2010-2012 Oak Ridge National Labs.  All rights reserved.
  * Copyright (c) 2013      NVIDIA Corporation.  All rights reserved.
  * Copyright (c) 2013      Intel, Inc. All rights reserved
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2018-2021 Triad National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
@@ -190,6 +191,13 @@ OMPI_DECLSPEC extern bool ompi_enable_timing;
 
 OMPI_DECLSPEC extern int ompi_mpi_event_tick_rate;
 OMPI_DECLSPEC extern bool ompi_mpi_yield_when_idle;
+
+#if OMPI_MPI_NOTIFICATIONS
+/**
+ * The maximal index for notifications with Notified RMA extension
+ */
+OPAL_DECLSPEC extern int ompi_max_notification_idx;
+#endif
 
 /**
  * Register MCA parameters used by the MPI layer.

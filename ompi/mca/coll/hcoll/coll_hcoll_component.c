@@ -3,6 +3,7 @@
  * Copyright (c) 2011 Mellanox Technologies. All rights reserved.
  * Copyright (c) 2015      Los Alamos National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2023-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -213,6 +214,7 @@ static int hcoll_open(void)
     opal_output_set_verbosity(mca_coll_hcoll_output, cm->hcoll_verbose);
     hcoll_rte_fns_setup();
     cm->libhcoll_initialized = false;
+    cm->is_world_freed = false;
     return OMPI_SUCCESS;
 }
 

@@ -1,6 +1,7 @@
 /* -*- Mode: C; c-basic-offset:4 ; -*- */
 /*
  * Copyright (c) 2009      Sun Microsystems, Inc.  All rights reserved.
+ * Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -29,6 +30,7 @@ typedef enum {
     OMPI_REQUEST_NOOP,     /**< A request that does nothing (e.g., to PROC_NULL) */
     OMPI_REQUEST_COMM,     /**< MPI-3 non-blocking communicator duplication */
     OMPI_REQUEST_PART,     /**< MPI-4 partitioned communication request */
+    OMPI_REQUEST_SUBPART,  /**< Bull proposal to check partitioned requests completion at the partition scale */
     OMPI_REQUEST_MAX       /**< Maximum request type */
 } ompi_request_type_t;
 

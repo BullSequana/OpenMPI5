@@ -13,6 +13,7 @@
  * Copyright (c) 2022      Amazon.com, Inc. or its affiliates.
  *                         All Rights reserved.
  * Copyright (c) 2023      Jeffrey M. Squyres.  All rights reserved.
+ * Copyright (c) 2023-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -177,7 +178,7 @@ static inline int ompi_osc_rdma_cas_local (const void *source_addr, const void *
             goto out;
         }
     } else {
-        compare_copy = compare_addr;
+        compare_copy = (void *)compare_addr;
     }
 
     if (0 == memcmp (compare_copy, result_copy, datatype->super.size)) {
@@ -828,7 +829,7 @@ static inline int cas_rdma (ompi_osc_rdma_sync_t *sync, const void *source_addr,
     ompi_osc_rdma_frag_t *frag = NULL;
     volatile bool complete = false;
     void *result_copy;
-    const void *compare_copy;
+    void *compare_copy;
     void *compare_to_free = NULL;
     bool result_copied = false;
     bool compare_copied = false;
@@ -867,7 +868,7 @@ static inline int cas_rdma (ompi_osc_rdma_sync_t *sync, const void *source_addr,
                                         compare_to_free, compare_addr, len, MCA_ACCELERATOR_TRANSFER_DTOH);
         compare_copied = true;
     } else if (0 == ret) {
-        compare_copy = compare_addr;
+        compare_copy = (void *)compare_addr;
     } else {
         if (result_copied) {
             free(result_copy);

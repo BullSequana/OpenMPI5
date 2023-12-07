@@ -1,6 +1,6 @@
 /* -*- Mode: C; c-basic-offset:4 ; indent-tabs-mode:nil -*- */
 /*
- * Copyright (c) 2020-2022 Bull S.A.S. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2021      Triad National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2022      IBM Corporation. All rights reserved
@@ -26,6 +26,7 @@
 #include "ompi/mca/coll/han/coll_han_algorithms.h"
 #include "ompi/mca/coll/base/coll_base_util.h"
 
+
 /*
  * Tests if a dynamic collective is implemented
  * Useful for file reading warnings and MCA parameter generation
@@ -35,6 +36,8 @@
 bool mca_coll_han_is_coll_dynamic_implemented(COLLTYPE_T coll_id)
 {
     switch (coll_id) {
+    case ALLTOALL:
+    case ALLTOALLV:
     case ALLGATHER:
     case ALLGATHERV:
     case ALLREDUCE:
@@ -63,6 +66,7 @@ mca_coll_han_component_name_to_id(const char* name)
     }
     return -1;
 }
+
 
 /*
  * Get all the collective modules initialized on this communicator
@@ -451,10 +455,39 @@ mca_coll_han_allgather_intra_dynamic(const void *sbuf, int scount,
                                          han_module);
         allgather = (mca_coll_base_module_allgather_fn_t)mca_coll_han_algorithm_id_to_fn(ALLGATHER, algorithm_id);
         if (NULL == allgather) { /* default behaviour */
-            if(mca_coll_han_component.use_simple_algorithm[ALLGATHER]) {
-                allgather = mca_coll_han_allgather_intra_simple;
+            if (mca_coll_han_has_2_levels(han_module)) {
+                if(mca_coll_han_component.use_simple_algorithm[ALLGATHER]) {
+                    switch (mca_coll_han_component.allgather_algorithm) {
+                    case 0:
+                        allgather = mca_coll_han_allgather_intra_simple;
+                        break;
+                    case 1:
+                        allgather = mca_coll_han_allgather_intra_up;
+                        break;
+                    case 2:
+                        allgather = mca_coll_han_allgather_intra_low;
+                        break;
+                    case 3:
+                        if (han_module->have_even_low_size && han_module->is_mapbycore) {
+                            allgather = mca_coll_han_allgather_intra_split;
+                        } else {
+                            OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                                 "HAN/ALLGATHER: The simple_splited algorithm need an"
+                                 "even size low_communicator and a block distribution."
+                                 "Use simple algorithm instead\n"));
+                            allgather = mca_coll_han_allgather_intra_simple;
+                        }
+                        break;
+                    default:
+                        allgather = mca_coll_han_allgather_intra_simple;
+                        break;
+                    }
+                } else {
+                    allgather = mca_coll_han_allgather_intra;
+                }
             } else {
-                allgather = mca_coll_han_allgather_intra;
+                allgather = han_module->previous_allgather;
+                sub_module = han_module->previous_allgather_module;
             }
         }
     } else {
@@ -591,7 +624,6 @@ mca_coll_han_allgatherv_intra_dynamic(const void *sbuf, int scount,
                       sub_module);
 }
 
-
 /*
  * Allreduce selector:
  * On a sub-communicator, checks the stored rules to find the module to use
@@ -675,7 +707,7 @@ mca_coll_han_allreduce_intra_dynamic(const void *sbuf,
         allreduce = han_module->previous_allreduce;
         sub_module = han_module->previous_allreduce_module;
     } else if (GLOBAL_COMMUNICATOR == topo_lvl && sub_module == module) {
-        /* Reproducibility: fallback on reproducible algorithm */
+        /* Reproducibility: fallback on reproducible algo */
         if (mca_coll_han_component.han_reproducible) {
             allreduce = mca_coll_han_allreduce_reproducible;
         } else {
@@ -685,16 +717,21 @@ mca_coll_han_allreduce_intra_dynamic(const void *sbuf,
              * sub_module->coll_allreduce is valid and point to this function
              * Call han topological collective algorithm
              */
-            int algorithm_id = get_algorithm(ALLREDUCE, dtype_size, comm, han_module);
-            allreduce = (mca_coll_base_module_allreduce_fn_t) mca_coll_han_algorithm_id_to_fn(ALLREDUCE, algorithm_id);
+            int algo_id = get_algorithm(ALLREDUCE, dtype_size, comm, han_module);
+            allreduce = (mca_coll_base_module_allreduce_fn_t) mca_coll_han_algorithm_id_to_fn(ALLREDUCE, algo_id);
 
             if (NULL == allreduce) { /* default behaviour */
-                if(mca_coll_han_component.use_simple_algorithm[ALLREDUCE]) {
-                    allreduce = mca_coll_han_allreduce_intra_simple;
+                if (mca_coll_han_has_2_levels(han_module)) {
+                    if(mca_coll_han_component.use_simple_algorithm[ALLREDUCE]) {
+                        allreduce = mca_coll_han_allreduce_intra_simple;
+                    } else {
+                        allreduce = mca_coll_han_allreduce_intra;
+                    }
                 } else {
-                    allreduce = mca_coll_han_allreduce_intra;
+                    allreduce = mca_coll_han_allreduce_recursive_reduce_bcast;
                 }
             }
+            sub_module = module;
         }
     } else {
         /*
@@ -710,6 +747,244 @@ mca_coll_han_allreduce_intra_dynamic(const void *sbuf,
                      op, comm, sub_module);
 }
 
+/*
+ * Alltoall selector:
+ * On a sub-communicator, checks the stored rules to find the module to use
+ * On the global communicator, calls the han collective implementation, or
+ * calls the correct module if fallback mechanism is activated
+ */
+int
+mca_coll_han_alltoall_intra_dynamic(const void *sbuf, int scount,
+                                    struct ompi_datatype_t *sdtype,
+                                    void *rbuf, int rcount,
+                                    struct ompi_datatype_t *rdtype,
+                                    struct ompi_communicator_t *comm,
+                                    mca_coll_base_module_t *module)
+{
+    mca_coll_han_module_t *han_module = (mca_coll_han_module_t*) module;
+    TOPO_LVL_T topo_lvl = han_module->topologic_level;
+    mca_coll_base_module_alltoall_fn_t alltoall;
+    mca_coll_base_module_t *sub_module;
+    size_t dtype_size;
+    int rank, verbosity = 0;
+
+    /* Compute configuration information for dynamic rules */
+    if( MPI_IN_PLACE != sbuf ) {
+        ompi_datatype_type_size(sdtype, &dtype_size);
+        dtype_size = dtype_size * scount;
+    } else {
+        ompi_datatype_type_size(rdtype, &dtype_size);
+        dtype_size = dtype_size * rcount;
+    }
+    sub_module = get_module(ALLTOALL,
+                            dtype_size,
+                            comm,
+                            han_module);
+
+    /* First errors are always printed by rank 0 */
+    rank = ompi_comm_rank(comm);
+    if( (0 == rank) && (han_module->dynamic_errors < mca_coll_han_component.max_dynamic_errors) ) {
+        verbosity = 30;
+    }
+
+    if(NULL == sub_module) {
+        /*
+         * No valid collective module from dynamic rules
+         * nor from mca parameter
+         */
+        han_module->dynamic_errors++;
+        opal_output_verbose(verbosity, mca_coll_han_component.han_output,
+                            "coll:han:mca_coll_han_alltoall_intra_dynamic "
+                            "HAN did not find any valid module for collective %d (%s) "
+                            "with topological level %d (%s) on communicator (%d/%s). "
+                            "Please check dynamic file/mca parameters\n",
+                            ALLTOALL, mca_coll_base_colltype_to_str(ALLGATHER),
+                            topo_lvl, mca_coll_han_topo_lvl_to_str(topo_lvl),
+                            comm->c_contextid, comm->c_name);
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                             "HAN/ALLTOALL: No module found for the sub-communicator. "
+                             "Falling back to another component\n"));
+        alltoall = han_module->previous_alltoall;
+        sub_module = han_module->previous_alltoall_module;
+    } else if (NULL == sub_module->coll_alltoall) {
+        /*
+         * No valid collective from dynamic rules
+         * nor from mca parameter
+         */
+        han_module->dynamic_errors++;
+        opal_output_verbose(verbosity, mca_coll_han_component.han_output,
+                            "coll:han:mca_coll_han_alltoall_intra_dynamic HAN found valid module for collective %d (%s) "
+                            "with topological level %d (%s) on communicator (%d/%s) but this module cannot handle this collective. "
+                            "Please check dynamic file/mca parameters\n",
+                            ALLTOALL, mca_coll_base_colltype_to_str(ALLGATHER),
+                            topo_lvl, mca_coll_han_topo_lvl_to_str(topo_lvl),
+                            comm->c_contextid, comm->c_name);
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                             "HAN/ALLTOALL: the module found for the sub-communicator"
+                             " cannot handle the ALLTOALL operation. Falling back to another component\n"));
+        alltoall = han_module->previous_alltoall;
+        sub_module = han_module->previous_alltoall_module;
+    } else if (GLOBAL_COMMUNICATOR == topo_lvl && sub_module == module) {
+        /*
+         * No fallback mechanism activated for this configuration
+         * sub_module is valid
+         * sub_module->coll_alltoall is valid and point to this function
+         * Call han topological collective algorithm
+         */
+        int algo_id = get_algorithm(ALLTOALL,
+                               dtype_size,
+                               comm,
+                               han_module);
+        alltoall = (mca_coll_base_module_alltoall_fn_t)mca_coll_han_algorithm_id_to_fn(ALLTOALL, algo_id);
+        if (NULL == alltoall) { /* default behaviour */
+            if (mca_coll_han_has_2_levels(han_module)) {
+                switch (mca_coll_han_component.alltoall_algorithm) {
+                case 0:
+                    alltoall = mca_coll_han_alltoall_intra_grid;
+                    break;
+                case 1:
+                    alltoall = mca_coll_han_alltoall_intra_pipelined_grid;
+                    break;
+                case 2:
+                default:
+                    if (han_module->have_up_igatherw) {
+                        alltoall = mca_coll_han_alltoall_intra_rolling_igatherw;
+                    } else {
+                        alltoall = mca_coll_han_alltoall_intra_pipelined_grid;
+                    }
+                    break;
+                }
+            } else {
+                alltoall = mca_coll_han_ml_alltoall_grid;
+            }
+        }
+    } else {
+        /*
+         * If we get here:
+         * sub_module is valid
+         * sub_module->coll_alltoall is valid
+         * They points to the collective to use, according to the dynamic rules
+         * Selector's job is done, call the collective
+         */
+        alltoall = sub_module->coll_alltoall;
+    }
+    return alltoall(sbuf, scount, sdtype,
+                    rbuf, rcount, rdtype,
+                    comm,
+                    sub_module);
+}
+
+/*
+ * Alltoallv selector:
+ * On a sub-communicator, checks the stored rules to find the module to use
+ * On the global communicator, calls the han collective implementation, or
+ * calls the correct module if fallback mechanism is activated
+ */
+int
+mca_coll_han_alltoallv_intra_dynamic(const void *sbuf, 
+                                     const int *scount,
+                                     const int *sdispl,
+                                     struct ompi_datatype_t *sdtype,
+                                     void *rbuf, 
+                                     const int *rcount,
+                                     const int *rdispl,
+                                     struct ompi_datatype_t *rdtype,
+                                     struct ompi_communicator_t *comm,
+                                     mca_coll_base_module_t *module)
+{
+    mca_coll_han_module_t *han_module = (mca_coll_han_module_t*) module;
+    TOPO_LVL_T topo_lvl = han_module->topologic_level;
+    mca_coll_base_module_alltoallv_fn_t alltoallv;
+    mca_coll_base_module_t *sub_module;
+    size_t dtype_size;
+    int rank;
+    int verbosity = 0;
+
+    /* Datatype size is 0 to avoid allreduce here*/
+    dtype_size = 0;
+    sub_module = get_module(ALLTOALLV,
+                            dtype_size,
+                            comm,
+                            han_module);
+
+    /* First errors are always printed by rank 0 */
+    rank = ompi_comm_rank(comm);
+    if( (0 == rank) && (han_module->dynamic_errors < mca_coll_han_component.max_dynamic_errors) ) {
+        verbosity = 30;
+    }
+
+    if(NULL == sub_module) {
+        /*
+         * No valid collective module from dynamic rules
+         * nor from mca parameter
+         */
+        han_module->dynamic_errors++;
+        opal_output_verbose(verbosity, mca_coll_han_component.han_output,
+                            "coll:han:mca_coll_han_alltoallv_intra_dynamic "
+                            "HAN did not find any valid module for collective %d (%s) "
+                            "with topological level %d (%s) on communicator (%d/%s). "
+                            "Please check dynamic file/mca parameters\n",
+                            ALLTOALLV, mca_coll_base_colltype_to_str(ALLTOALLV),
+                            topo_lvl, mca_coll_han_topo_lvl_to_str(topo_lvl),
+                            comm->c_contextid, comm->c_name);
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                             "HAN/ALLTOALLV: No module found for the sub-communicator. "
+                             "Falling back to another component\n"));
+        alltoallv = han_module->previous_alltoallv;
+        sub_module = han_module->previous_alltoallv_module;
+    } else if (NULL == sub_module->coll_alltoallv) {
+        /*
+         * No valid collective from dynamic rules
+         * nor from mca parameter
+         */
+        han_module->dynamic_errors++;
+        opal_output_verbose(verbosity, mca_coll_han_component.han_output,
+                            "coll:han:mca_coll_han_alltoallv_intra_dynamic HAN found valid module for collective %d (%s) "
+                            "with topological level %d (%s) on communicator (%d/%s) but this module cannot handle this collective. "
+                            "Please check dynamic file/mca parameters\n",
+                            ALLTOALLV, mca_coll_base_colltype_to_str(ALLTOALLV),
+                            topo_lvl, mca_coll_han_topo_lvl_to_str(topo_lvl),
+                            comm->c_contextid, comm->c_name);
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                             "HAN/ALLTOALLV: the module found for the sub-communicator"
+                             " cannot handle the ALLTOALLV operation. Falling back to another component\n"));
+        alltoallv = han_module->previous_alltoallv;
+        sub_module = han_module->previous_alltoallv_module;
+    } else if (GLOBAL_COMMUNICATOR == topo_lvl && sub_module == module) {
+        /*
+         * No fallback mechanism activated for this configuration
+         * sub_module is valid
+         * sub_module->coll_alltoallv is valid and point to this function
+         * Call han topological collective algorithm
+         */
+        int algo_id = get_algorithm(ALLTOALLV,
+                               dtype_size,
+                               comm,
+                               han_module);
+        alltoallv = (mca_coll_base_module_alltoallv_fn_t)mca_coll_han_algorithm_id_to_fn(ALLTOALLV, algo_id);
+        if (NULL == alltoallv) { /* default behaviour */
+            if (mca_coll_han_has_2_levels(han_module)) {
+                alltoallv = mca_coll_han_alltoallv_grid;
+            } else {
+                alltoallv = han_module->previous_alltoallv;
+                sub_module = han_module->previous_alltoallv_module;
+            }
+        }
+    } else {
+        /*
+         * If we get here:
+         * sub_module is valid
+         * sub_module->coll_alltoallv is valid
+         * They point to the collective to use, according to the dynamic rules
+         * Selector's job is done, call the collective
+         */
+        alltoallv = sub_module->coll_alltoallv;
+    }
+    return alltoallv(sbuf, scount, sdispl, sdtype,
+                     rbuf, rcount, rdispl, rdtype,
+                     comm,
+                     sub_module);
+}
 
 /*
  * Barrier selector:
@@ -793,7 +1068,12 @@ mca_coll_han_barrier_intra_dynamic(struct ompi_communicator_t *comm,
         int algorithm_id = get_algorithm(BARRIER, 0, comm, han_module);
         barrier = (mca_coll_base_module_barrier_fn_t) mca_coll_han_algorithm_id_to_fn(BARRIER, algorithm_id);
         if (NULL == barrier) { /* default behaviour*/
-            barrier = mca_coll_han_barrier_intra_simple;
+            if (mca_coll_han_has_2_levels(han_module)) {
+                barrier = mca_coll_han_barrier_intra_simple;
+            } else {
+                barrier = han_module->previous_barrier;
+                sub_module = han_module->previous_barrier_module;
+            }
         }
     } else {
         /*
@@ -902,11 +1182,17 @@ mca_coll_han_bcast_intra_dynamic(void *buff,
                                          han_module);
         bcast = (mca_coll_base_module_bcast_fn_t)mca_coll_han_algorithm_id_to_fn(BCAST, algorithm_id);
         if (NULL == bcast) { /* default behaviour */
-             if(mca_coll_han_component.use_simple_algorithm[BCAST]) {
-                bcast = mca_coll_han_bcast_intra_simple;
+            if (mca_coll_han_has_2_levels(han_module)) {
+                 if(mca_coll_han_component.use_simple_algorithm[BCAST]) {
+                    bcast = mca_coll_han_bcast_intra_simple;
+                } else {
+                    bcast = mca_coll_han_bcast_intra;
+                }
             } else {
-                bcast = mca_coll_han_bcast_intra;
+                bcast = mca_coll_han_bcast_intra_recursive;
             }
+        } else {
+            bcast = mca_coll_han_bcast_intra_recursive;
         }
     } else {
         /*
@@ -921,7 +1207,6 @@ mca_coll_han_bcast_intra_dynamic(void *buff,
     return bcast(buff, count, dtype,
                  root, comm, sub_module);
 }
-
 
 /*
  * Gather selector:
@@ -958,7 +1243,6 @@ mca_coll_han_gather_intra_dynamic(const void *sbuf, int scount,
         ompi_datatype_type_size(rdtype, &dtype_size);
         dtype_size = dtype_size * rcount;
     }
-
     sub_module = get_module(GATHER,
                             dtype_size,
                             comm,
@@ -1023,10 +1307,18 @@ mca_coll_han_gather_intra_dynamic(const void *sbuf, int scount,
                                          han_module);
         gather = (mca_coll_base_module_gather_fn_t) mca_coll_han_algorithm_id_to_fn(GATHER, algorithm_id);
         if (NULL == gather) { /* default behaviour */
-            if(mca_coll_han_component.use_simple_algorithm[GATHER]) {
-                gather = mca_coll_han_gather_intra_simple;
+            if (mca_coll_han_has_2_levels(han_module)) {
+                if(mca_coll_han_component.use_noreorder_gather
+                   && han_module->have_up_gatherw) {
+                    gather = mca_coll_han_gather_intra_noreorder;
+                } else if(mca_coll_han_component.use_simple_algorithm[GATHER]) {
+                    gather = mca_coll_han_gather_intra_simple;
+                } else {
+                    gather = mca_coll_han_gather_intra;
+                }
             } else {
-                gather = mca_coll_han_gather_intra;
+                gather = han_module->previous_gather;
+                sub_module = han_module->previous_gather_module;
             }
         }
     } else {
@@ -1044,7 +1336,6 @@ mca_coll_han_gather_intra_dynamic(const void *sbuf, int scount,
                   root, comm,
                   sub_module);
 }
-
 
 /*
  * Reduce selector:
@@ -1146,10 +1437,14 @@ mca_coll_han_reduce_intra_dynamic(const void *sbuf,
                                              han_module);
             reduce = (mca_coll_base_module_reduce_fn_t)mca_coll_han_algorithm_id_to_fn(REDUCE, algorithm_id);
             if (NULL == reduce) { /* default behaviour */
-                if(mca_coll_han_component.use_simple_algorithm[REDUCE]) {
-                    reduce = mca_coll_han_reduce_intra_simple;
+                if (mca_coll_han_has_2_levels(han_module)) {
+                    if(mca_coll_han_component.use_simple_algorithm[REDUCE]) {
+                        reduce = mca_coll_han_reduce_intra_simple;
+                    } else {
+                        reduce = mca_coll_han_reduce_intra;
+                    }
                 } else {
-                    reduce = mca_coll_han_reduce_intra;
+                    reduce = mca_coll_han_reduce_intra_recursive;
                 }
             }
         }
@@ -1166,7 +1461,6 @@ mca_coll_han_reduce_intra_dynamic(const void *sbuf,
     return reduce(sbuf, rbuf, count, dtype,
                   op, root, comm, sub_module);
 }
-
 
 /*
  * Scatter selector:
@@ -1268,10 +1562,15 @@ mca_coll_han_scatter_intra_dynamic(const void *sbuf, int scount,
                                          han_module);
         scatter = (mca_coll_base_module_scatter_fn_t)mca_coll_han_algorithm_id_to_fn(SCATTER, algorithm_id);
         if (NULL == scatter) { /* default behaviour */
-            if(mca_coll_han_component.use_simple_algorithm[SCATTER]) {
-                scatter = mca_coll_han_scatter_intra_simple;
+            if (mca_coll_han_has_2_levels(han_module)) {
+                if(mca_coll_han_component.use_simple_algorithm[SCATTER]) {
+                    scatter = mca_coll_han_scatter_intra_simple;
+                } else {
+                    scatter = mca_coll_han_scatter_intra;
+                }
             } else {
-                scatter = mca_coll_han_scatter_intra;
+                scatter = han_module->previous_scatter;
+                sub_module = han_module->previous_scatter_module;
             }
         }
     } else {

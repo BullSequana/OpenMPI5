@@ -14,6 +14,7 @@
  *                         reserved.
  * Copyright (c) 2015-2017 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -60,6 +61,13 @@ int MPI_Win_lock(int lock_type, int rank, int mpi_assert, MPI_Win win)
             return OMPI_ERRHANDLER_INVOKE(win, MPI_ERR_RMA_SYNC, FUNC_NAME);
         }
     }
+
+#if OMPI_MPI_NOTIFICATIONS
+    if (NULL != win->w_notify){
+        rc = win->w_notify->w_osc_module->osc_lock(lock_type, rank, mpi_assert, win->w_notify);
+        OMPI_ERRHANDLER_CHECK(rc, win->w_notify, rc, FUNC_NAME);
+    }
+#endif
 
     rc = win->w_osc_module->osc_lock(lock_type, rank, mpi_assert, win);
     OMPI_ERRHANDLER_RETURN(rc, win, rc, FUNC_NAME);

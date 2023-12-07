@@ -17,6 +17,7 @@
  * Copyright (c) 2016-2017 IBM Corporation. All rights reserved.
  * Copyright (c) 2018      Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -109,6 +110,17 @@ struct ompi_win_t {
 
     /* one sided interface */
     ompi_osc_base_module_t *w_osc_module;
+
+#if OMPI_MPI_NOTIFICATIONS
+    /* Notification window */
+    struct ompi_win_t *w_notify;
+
+    /* Notification window base pointer */
+    int *notif_base_pointer;
+
+    /* Is this wondow a notified window */
+    int is_notif_window;
+#endif
 
     /** Accumulate ordering (see ompi_win_accumulate_order_flags_t above) */
     int32_t w_acc_order;

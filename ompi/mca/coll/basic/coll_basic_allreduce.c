@@ -12,6 +12,7 @@
  * Copyright (c) 2015-2017 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2017      IBM Corporation. All rights reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -31,6 +32,7 @@
 #include "ompi/mca/coll/base/coll_base_util.h"
 #include "coll_basic.h"
 #include "ompi/mca/pml/pml.h"
+#include "opal/runtime/opal_params.h"
 
 
 /*
@@ -86,6 +88,8 @@ mca_coll_basic_allreduce_inter(const void *sbuf, void *rbuf, int count,
     ptrdiff_t extent, dsize, gap;
     char *tmpbuf = NULL, *pml_buffer = NULL;
     ompi_request_t **reqs = NULL;
+    char *true_rbuf = rbuf;
+    char *rbuf_free = NULL;
 
     rank = ompi_comm_rank(comm);
     rsize = ompi_comm_remote_size(comm);
@@ -112,6 +116,16 @@ mca_coll_basic_allreduce_inter(const void *sbuf, void *rbuf, int count,
         if (rsize > 1) {
             reqs = ompi_coll_base_comm_get_reqs(module->base_data, rsize - 1);
             if( NULL == reqs ) { err = OMPI_ERR_OUT_OF_RESOURCE; line = __LINE__; goto exit; }
+        }
+
+        if (opal_allreduce_use_device_pointers) {
+            rbuf_free = (char *)  malloc(dsize);
+            if (NULL == rbuf_free) {
+                err = OMPI_ERR_OUT_OF_RESOURCE;
+                line = __LINE__;
+                goto exit;
+            }
+            rbuf = rbuf_free - gap;
         }
 
         /* Do a send-recv between the two root procs. to avoid deadlock */
@@ -169,6 +183,14 @@ mca_coll_basic_allreduce_inter(const void *sbuf, void *rbuf, int count,
                 if (OMPI_SUCCESS != err) { line = __LINE__; goto exit; }
             }
 
+            if (opal_allreduce_use_device_pointers) {
+                err = ompi_datatype_copy_content_same_ddt(dtype, count, (char*)rbuf, true_rbuf);
+            }
+            if (OMPI_SUCCESS != err) {
+                line = __LINE__;
+                goto exit;
+            }
+
             err =
                 ompi_request_wait_all(rsize - 1, reqs,
                                       MPI_STATUSES_IGNORE);
@@ -190,6 +212,9 @@ mca_coll_basic_allreduce_inter(const void *sbuf, void *rbuf, int count,
     }
     if (NULL != tmpbuf) {
         free(tmpbuf);
+    }
+    if (NULL != rbuf_free) {
+        free(rbuf_free);
     }
 
     return err;

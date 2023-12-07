@@ -12,6 +12,7 @@
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2022      IBM Corporation.  All rights reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -30,6 +31,7 @@
 #include "ompi/mca/coll/base/coll_tags.h"
 #include "ompi/mca/pml/pml.h"
 #include "ompi/op/op.h"
+#include "opal/runtime/opal_params.h"
 
 
 /*
@@ -100,6 +102,7 @@ mca_coll_basic_reduce_log_intra(const void *sbuf, void *rbuf, int count,
     char *snd_buffer = NULL;
     char *rcv_buffer = (char*)rbuf;
     char *inplace_temp = NULL;
+    char *true_rbuf = rbuf;
 
     /* JMS Codearound for now -- if the operations is not communative,
      * just call the linear algorithm.  Need to talk to Edgar / George
@@ -138,10 +141,18 @@ mca_coll_basic_reduce_log_intra(const void *sbuf, void *rbuf, int count,
     /* Allocate sendbuf in case the MPI_IN_PLACE option has been used. See lengthy
      * rationale above. */
 
-    if (MPI_IN_PLACE == sbuf) {
+    if (MPI_IN_PLACE == sbuf || opal_reduce_use_device_pointers) {
         inplace_temp = (char*)malloc(dsize);
         if (NULL == inplace_temp) {
             err = OMPI_ERR_OUT_OF_RESOURCE;
+            goto cleanup_and_return;
+        }
+        if (MPI_IN_PLACE == sbuf) {
+            err = ompi_datatype_copy_content_same_ddt(dtype, count, inplace_temp - gap, (char*)rbuf);
+        } else {
+            err = ompi_datatype_copy_content_same_ddt(dtype, count, inplace_temp - gap, (char*)sbuf);
+        }
+        if (err != MPI_SUCCESS) {
             goto cleanup_and_return;
         }
         sbuf = inplace_temp - gap;
@@ -156,6 +167,14 @@ mca_coll_basic_reduce_log_intra(const void *sbuf, void *rbuf, int count,
         /* root is the only one required to provide a valid rbuf.
          * Assume rbuf is invalid for all other ranks, so fix it up
          * here to be valid on all non-leaf ranks */
+        free_rbuf = (char*)malloc(dsize);
+        if (NULL == free_rbuf) {
+            err = OMPI_ERR_OUT_OF_RESOURCE;
+            goto cleanup_and_return;
+        }
+        rbuf = free_rbuf - gap;
+    }
+    if (rank == root && opal_reduce_use_device_pointers) {
         free_rbuf = (char*)malloc(dsize);
         if (NULL == free_rbuf) {
             err = OMPI_ERR_OUT_OF_RESOURCE;
@@ -245,7 +264,7 @@ mca_coll_basic_reduce_log_intra(const void *sbuf, void *rbuf, int count,
     err = MPI_SUCCESS;
     if (0 == vrank) {
         if (root == rank) {
-            ompi_datatype_copy_content_same_ddt(dtype, count, (char*)rbuf, snd_buffer);
+            ompi_datatype_copy_content_same_ddt(dtype, count, true_rbuf, snd_buffer);
         } else {
             err = MCA_PML_CALL(send(snd_buffer, count,
                                     dtype, root, MCA_COLL_BASE_TAG_REDUCE,
@@ -257,6 +276,9 @@ mca_coll_basic_reduce_log_intra(const void *sbuf, void *rbuf, int count,
                                 comm, MPI_STATUS_IGNORE));
         if (rcv_buffer != rbuf) {
             ompi_op_reduce(op, rcv_buffer, rbuf, count, dtype);
+        }
+        if (opal_reduce_use_device_pointers) {
+            ompi_datatype_copy_content_same_ddt(dtype, count, true_rbuf, (char*)rbuf);
         }
     }
 
@@ -295,6 +317,8 @@ mca_coll_basic_reduce_lin_inter(const void *sbuf, void *rbuf, int count,
     ptrdiff_t dsize, gap;
     char *free_buffer = NULL;
     char *pml_buffer = NULL;
+    char *true_rbuf = rbuf;
+    char *rbuf_free = NULL;
 
     /* Initialize */
     size = ompi_comm_remote_size(comm);
@@ -317,6 +341,15 @@ mca_coll_basic_reduce_lin_inter(const void *sbuf, void *rbuf, int count,
         }
         pml_buffer = free_buffer - gap;
 
+        if (opal_reduce_use_device_pointers) {
+            rbuf_free = (char*)malloc(dsize);
+            if (NULL == rbuf_free) {
+                free(free_buffer);
+                return OMPI_ERR_OUT_OF_RESOURCE;
+            }
+
+            rbuf = rbuf_free - gap;
+        }
 
         /* Initialize the receive buffer. */
         err = MCA_PML_CALL(recv(rbuf, count, dtype, 0,
@@ -338,6 +371,9 @@ mca_coll_basic_reduce_lin_inter(const void *sbuf, void *rbuf, int count,
                 if (NULL != free_buffer) {
                     free(free_buffer);
                 }
+                if (opal_reduce_use_device_pointers) {
+                    free(rbuf_free);
+                }
                 return err;
             }
 
@@ -345,6 +381,10 @@ mca_coll_basic_reduce_lin_inter(const void *sbuf, void *rbuf, int count,
             ompi_op_reduce(op, pml_buffer, rbuf, count, dtype);
         }
 
+        if (opal_reduce_use_device_pointers) {
+            err = ompi_datatype_copy_content_same_ddt(dtype, count, true_rbuf, (char*)rbuf);
+            free(rbuf_free);
+        }
         if (NULL != free_buffer) {
             free(free_buffer);
         }

@@ -16,6 +16,7 @@
  * Copyright (c) 2015-2016 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2017      IBM Corporation.  All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -100,7 +101,7 @@ int ompi_coll_base_allgatherv_intra_bruck(const void *sbuf, int scount,
                                            struct ompi_communicator_t *comm,
                                            mca_coll_base_module_t *module)
 {
-    int line = -1, err = 0, rank, size, sendto, recvfrom, distance, blockcount, i;
+    int line = -1, err = 0, rank, size, sendto, recvfrom, distance, i;
     int *new_rcounts = NULL, *new_rdispls = NULL, *new_scounts = NULL, *new_sdispls = NULL;
     ptrdiff_t rlb, rext;
     char *tmpsend = NULL, *tmprecv = NULL;
@@ -139,8 +140,6 @@ int ompi_coll_base_allgatherv_intra_bruck(const void *sbuf, int scount,
        - blockcount doubles until the last step when only the remaining data is
        exchanged.
     */
-    blockcount = 1;
-    tmpsend = (char*) rbuf;
 
     new_rcounts = (int*) calloc(4*size, sizeof(int));
     if (NULL == new_rcounts) { err = -1; line = __LINE__; goto err_hndl; }
@@ -149,7 +148,7 @@ int ompi_coll_base_allgatherv_intra_bruck(const void *sbuf, int scount,
     new_sdispls = new_scounts + size;
 
     for (distance = 1; distance < size; distance<<=1) {
-
+        int blockcount;
         recvfrom = (rank + distance) % size;
         sendto = (rank - distance + size) % size;
 
@@ -173,6 +172,7 @@ int ompi_coll_base_allgatherv_intra_bruck(const void *sbuf, int scount,
         if (MPI_SUCCESS != err) { line = __LINE__; goto err_hndl; }
         err = ompi_datatype_create_indexed(blockcount, new_rcounts, new_rdispls,
                                            rdtype, &new_rdtype);
+        if (MPI_SUCCESS != err) { line = __LINE__; goto err_hndl; }
 
         err = ompi_datatype_commit(&new_sdtype);
         if (MPI_SUCCESS != err) { line = __LINE__; goto err_hndl; }

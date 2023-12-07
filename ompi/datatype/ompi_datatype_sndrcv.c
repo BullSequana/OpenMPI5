@@ -13,6 +13,7 @@
  * Copyright (c) 2009      Oak Ridge National Labs.  All rights reserved.
  * Copyright (c) 2014-2015 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -27,6 +28,36 @@
 #include "opal/datatype/opal_convertor.h"
 #include "ompi/datatype/ompi_datatype.h"
 #include "ompi/datatype/ompi_datatype_internal.h"
+#include "opal/runtime/opal_params.h"
+#include "ompi/request/request.h"
+#include "ompi/mca/pml/pml.h"
+#include "ompi/mca/coll/base/coll_tags.h"
+
+static inline int32_t
+self_sendrecv(const void *sbuf, int32_t scount, const ompi_datatype_t* sdtype,
+              void *rbuf, int32_t rcount, const ompi_datatype_t* rdtype)
+{
+    ompi_request_t *req;
+    int rc;
+
+    rc = MCA_PML_CALL(irecv(rbuf, rcount, (ompi_datatype_t*)rdtype, 0, MCA_COLL_BASE_TAG_SELF_SNDRCV, MPI_COMM_SELF, &req));
+    if (OPAL_UNLIKELY(OMPI_SUCCESS != rc)) {
+        return rc;
+    }
+
+    rc = MCA_PML_CALL(send(sbuf, scount, (ompi_datatype_t*)sdtype, 0, MCA_COLL_BASE_TAG_SELF_SNDRCV, MCA_PML_BASE_SEND_STANDARD, MPI_COMM_SELF));
+    if (OPAL_UNLIKELY(OMPI_SUCCESS != rc)) {
+        return rc;
+    }
+
+    rc = ompi_request_wait(&req, MPI_STATUS_IGNORE);
+    if (OPAL_UNLIKELY(OMPI_SUCCESS != rc)) {
+        return rc;
+    }
+
+    return OMPI_SUCCESS;
+}
+
 /*
  * opal_datatype_sndrcv
  *
@@ -54,6 +85,11 @@ int32_t ompi_datatype_sndrcv( const void *sbuf, int32_t scount, const ompi_datat
     /* First check if we really have something to do */
     if (0 == rcount || 0 == rdtype->super.size) {
         return ((0 == scount || 0 == sdtype->super.size) ? MPI_SUCCESS : MPI_ERR_TRUNCATE);
+    }
+
+    /* Fake sendrecv to delegate device memory gestion to the PML */
+    if (opal_copies_fallback_on_pml) {
+        return self_sendrecv(sbuf, scount, sdtype, rbuf, rcount, rdtype);
     }
 
     /* If same datatypes used, just copy. */
@@ -123,3 +159,32 @@ int32_t ompi_datatype_sndrcv( const void *sbuf, int32_t scount, const ompi_datat
 
     return ( (scount * sdtype->super.size) <= (rcount * rdtype->super.size) ? MPI_SUCCESS : MPI_ERR_TRUNCATE );
 }
+
+int32_t
+ompi_datatype_copy_content_same_ddt( const ompi_datatype_t* type, size_t count,
+        char* pDestBuf, char* pSrcBuf )
+{
+    int32_t length;
+    int32_t rc;
+    ptrdiff_t extent;
+    ompi_datatype_type_extent( type, &extent );
+
+    while( 0 != count ) { 
+        length = INT_MAX;
+        if( ((size_t)length) > count ) length = (int32_t)count;
+
+        if (opal_copies_fallback_on_pml) {
+            /* Sendrecv to delegate device memory gestion to the PML */
+            rc = self_sendrecv(pSrcBuf, length, type, pDestBuf, length, type);
+        } else {
+            rc = opal_datatype_copy_content_same_ddt( &type->super, length,
+                    pDestBuf, pSrcBuf );
+        }
+        if( 0 != rc ) return rc; 
+        pDestBuf += ((ptrdiff_t)length) * extent;
+        pSrcBuf  += ((ptrdiff_t)length) * extent;
+        count -= (size_t)length;
+    }
+    return 0;
+}
+

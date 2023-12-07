@@ -17,7 +17,7 @@
  * Copyright (c) 2017-2022 IBM Corporation. All rights reserved.
  * Copyright (c) 2021      Amazon.com, Inc. or its affiliates.  All Rights
  *                         reserved.
- * Copyright (c) 2022      BULL S.A.S. All rights reserved.
+ * Copyright (c) 2019-2022 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -271,7 +271,7 @@ int ompi_coll_base_alltoall_intra_bruck(const void *sbuf, int scount,
     /* tmp buffer allocation for message data */
     tmpbuf_free = (char *)malloc(span);
     if (tmpbuf_free == NULL) { line = __LINE__; err = -1; goto err_hndl; }
-    tmpbuf = tmpbuf_free - gap;
+    else tmpbuf = tmpbuf_free - gap;
 
     /* Step 1 - local rotation - shift up by rank */
     err = ompi_datatype_sndrcv ((char*)sbuf + ((ptrdiff_t) rank * scount * sext),
@@ -313,7 +313,6 @@ int ompi_coll_base_alltoall_intra_bruck(const void *sbuf, int scount,
             ompi_datatype_add(new_ddt, rdtype, rcount * nblocks,
                               i * rcount * rext, rext);
         }
-
         /* Commit the new datatype */
         err = ompi_datatype_commit(&new_ddt);
         if (err != MPI_SUCCESS) { line = __LINE__; goto err_hndl;  }
@@ -346,6 +345,7 @@ int ompi_coll_base_alltoall_intra_bruck(const void *sbuf, int scount,
 
     /* Step 4 - clean up */
     if (tmpbuf_free != NULL) free(tmpbuf_free);
+    if (displs != NULL) free(displs);
     return OMPI_SUCCESS;
 
  err_hndl:

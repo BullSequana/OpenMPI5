@@ -4,6 +4,7 @@
  *                         reserved.
  * Copyright (c) 2014-2015 NVIDIA Corporation.  All rights reserved.
  * Copyright (c) 2022      Amazon.com, Inc. or its affiliates.  All Rights reserved.
+ * Copyright (c) 2024      BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -18,6 +19,7 @@
 
 #include "ompi/op/op.h"
 #include "opal/datatype/opal_convertor.h"
+#include "opal/opal_touch_pages.h"
 
 /*
  *	reduce_scatter_block
@@ -55,7 +57,15 @@ mca_coll_cuda_reduce_scatter_block(const void *sbuf, void *rbuf, int rcount,
         if (NULL == sbuf1) {
             return OMPI_ERR_OUT_OF_RESOURCE;
         }
-        mca_coll_cuda_memcpy(sbuf1, sbuf, sbufsize);
+        if (mca_coll_cuda_component.enable_tmp_buf_touch_pages) {
+            opal_touch_pages_write(sbuf1, sbufsize);
+        }
+
+        if (ompi_datatype_is_contiguous_memory_layout(dtype, rcount)) {
+            mca_coll_cuda_memcpy(sbuf1, sbuf, sbufsize);
+        } else {
+            ompi_datatype_copy_content_same_ddt(dtype, rcount, sbuf1 - gap, (char *) sbuf);
+        }
         sbuf = sbuf1 - gap;
     }
     rc = mca_coll_cuda_check_buf(rbuf);
@@ -68,7 +78,15 @@ mca_coll_cuda_reduce_scatter_block(const void *sbuf, void *rbuf, int rcount,
             if (NULL != sbuf1) free(sbuf1);
             return OMPI_ERR_OUT_OF_RESOURCE;
         }
-        mca_coll_cuda_memcpy(rbuf1, rbuf, rbufsize);
+        if (mca_coll_cuda_component.enable_tmp_buf_touch_pages) {
+            opal_touch_pages_write(rbuf1, rbufsize);
+        }
+
+        if (ompi_datatype_is_contiguous_memory_layout(dtype, rcount)) {
+            mca_coll_cuda_memcpy(rbuf1, rbuf, rbufsize);
+        } else {
+            ompi_datatype_copy_content_same_ddt(dtype, rcount, rbuf1 - gap, (char *) rbuf);
+        }
         rbuf2 = rbuf; /* save away original buffer */
         rbuf = rbuf1 - gap;
     }
@@ -79,7 +97,11 @@ mca_coll_cuda_reduce_scatter_block(const void *sbuf, void *rbuf, int rcount,
     }
     if (NULL != rbuf1) {
         rbuf = rbuf2;
-        mca_coll_cuda_memcpy(rbuf, rbuf1, rbufsize);
+        if (ompi_datatype_is_contiguous_memory_layout(dtype, rcount)) {
+            mca_coll_cuda_memcpy(rbuf, rbuf1, rbufsize);
+        } else {
+            ompi_datatype_copy_content_same_ddt(dtype, rcount, rbuf, rbuf1 - gap);
+        }
         free(rbuf1);
     }
     return rc;

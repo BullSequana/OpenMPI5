@@ -11,6 +11,7 @@
  *                         and Technology (RIST).  All rights reserved.
  * Copyright (c) 2018      FUJITSU LIMITED.  All rights reserved.
  * Copyright (c) 2021      IBM Corporation. All rights reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -274,26 +275,8 @@ ompi_datatype_set_element_count( const ompi_datatype_t* type, size_t count, size
     return opal_datatype_set_element_count( &type->super, count, length );
 }
 
-static inline int32_t
-ompi_datatype_copy_content_same_ddt( const ompi_datatype_t* type, size_t count,
-                                     char* pDestBuf, char* pSrcBuf )
-{
-    int32_t length, rc;
-    ptrdiff_t extent;
-
-    ompi_datatype_type_extent( type, &extent );
-    while( 0 != count ) {
-        length = INT_MAX;
-        if( ((size_t)length) > count ) length = (int32_t)count;
-        rc = opal_datatype_copy_content_same_ddt( &type->super, length,
-                                                  pDestBuf, pSrcBuf );
-        if( 0 != rc ) return rc;
-        pDestBuf += ((ptrdiff_t)length) * extent;
-        pSrcBuf  += ((ptrdiff_t)length) * extent;
-        count -= (size_t)length;
-    }
-    return 0;
-}
+OMPI_DECLSPEC int32_t ompi_datatype_copy_content_same_ddt( const ompi_datatype_t* type, size_t count,
+                                                           char* pDestBuf, char* pSrcBuf );
 
 OMPI_DECLSPEC const ompi_datatype_t* ompi_datatype_match_size( int size, uint16_t datakind, uint16_t datalang );
 

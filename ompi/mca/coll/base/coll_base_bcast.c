@@ -14,6 +14,7 @@
  * Copyright (c) 2016      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2017      IBM Corporation. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -391,6 +392,7 @@ ompi_coll_base_bcast_intra_split_bintree ( void* buffer,
     tree = module->base_data->cached_bintree;
 
     err = ompi_datatype_type_size( datatype, &type_size );
+    if (err != OMPI_SUCCESS) { line = __LINE__; goto error_hndl; }
 
     /* Determine number of segments and number of elements per segment */
     counts[0] = count/2;
@@ -425,6 +427,7 @@ ompi_coll_base_bcast_intra_split_bintree ( void* buffer,
     }
 
     err = ompi_datatype_get_extent (datatype, &lb, &type_extent);
+    if (err != OMPI_SUCCESS) { line = __LINE__; goto error_hndl; }
 
     /* Determine real segment size */
     realsegsize[0] = (ptrdiff_t)segcount[0] * type_extent;
@@ -500,6 +503,7 @@ ompi_coll_base_bcast_intra_split_bintree ( void* buffer,
 
             /* wait for and forward the previous segment */
             err = ompi_request_wait( &base_req, MPI_STATUS_IGNORE );
+            if (err != OMPI_SUCCESS) { line = __LINE__; goto error_hndl; }
             for( i = 0; i < tree->tree_nextsize; i++ ) {  /* send data to children (segcount[lr]) */
                 err = MCA_PML_CALL(send( tmpbuf[lr], segcount[lr], datatype,
                                          tree->tree_next[i], MCA_COLL_BASE_TAG_BCAST,
@@ -515,6 +519,7 @@ ompi_coll_base_bcast_intra_split_bintree ( void* buffer,
 
         /* wait for the last segment and forward current segment */
         err = ompi_request_wait( &base_req, MPI_STATUS_IGNORE );
+        if (err != OMPI_SUCCESS) { line = __LINE__; goto error_hndl; }
         for( i = 0; i < tree->tree_nextsize; i++ ) {  /* send data to children */
             err = MCA_PML_CALL(send(tmpbuf[lr], sendcount[lr], datatype,
                                     tree->tree_next[i], MCA_COLL_BASE_TAG_BCAST,

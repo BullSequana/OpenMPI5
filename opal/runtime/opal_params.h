@@ -20,12 +20,15 @@
  *                         All rights reserved.
  * Copyright (c) 2017      IBM Corporation.  All rights reserved.
  * Copyright (c) 2022      Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
  */
+
+#include "opal_config.h"
 
 #if !defined(OPAL_PARAMS_H)
 #    define OPAL_PARAMS_H

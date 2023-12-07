@@ -17,6 +17,7 @@
  * Copyright (c) 2016-2018 Los Alamos National Security, LLC. All rights
  *                         reserved.
  *
+ * Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -114,11 +115,11 @@ int mca_btl_base_param_register(mca_base_component_t *version, mca_btl_base_modu
         module->btl_accelerator_eager_limit = 0;
         module->btl_accelerator_rdma_limit = SIZE_MAX;
     }
-    (void) mca_base_component_var_register(
-        version, "accelerator_eager_limit",
-        "Maximum size (in bytes, including header) of \"GPU short\" messages (must be >= 1).",
-        MCA_BASE_VAR_TYPE_SIZE_T, NULL, 0, 0, OPAL_INFO_LVL_5, MCA_BASE_VAR_SCOPE_READONLY,
-        &module->btl_accelerator_eager_limit);
+    (void) mca_base_component_var_register(version, "accelerator_eager_limit", "Maximum size (in bytes, including header) of \"GPU short\" messages (must be >= 1).",
+                                           MCA_BASE_VAR_TYPE_SIZE_T, NULL, 0, 0,
+                                           OPAL_INFO_LVL_5,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &module->btl_accelerator_eager_limit);
     (void) mca_base_component_var_register(version, "accelerator_rdma_limit",
                                            "Size (in bytes, including header) of GPU buffer when "
                                            "switch to rndv protocol and pipeline.",

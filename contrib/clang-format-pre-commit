@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# To be used automatically this file must be copied into .git/hooks/pre-commit
+echo ">>> Running clang-format on commited code : START"
+if [ -x /usr/bin/git-clang-format ]; then
+    git-clang-format --style file --extensions c,h
+else
+    echo "\"git-clang-format\" is not installed. We can not format directly the modified lines. clang-format will be use on entiere commited files."
+    files=($(git diff --cached --name-only | grep -v -E '3rd-party/|contrib/|cip/' | grep -e '.*\.[ch]$' | xargs grep -E -L -- "-*- fortran -*-|-*- f90 -*-"))
+    for file in "${files[@]}" ; do
+        clang-format --style=file --verbose -i "${file}"
+    done
+fi
+echo ">>> Running clang-format on commited code : DONE. Check \"Unstaged changes\"."

@@ -11,6 +11,7 @@
  * Copyright (c) 2014      Los Alamos National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2016-2017 IBM Corporation. All rights reserved.
+ * Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -56,6 +57,8 @@ ompi_osc_base_select(ompi_win_t *win,
 
         priority = component->osc_query(win, base, size, disp_unit, comm,
                                         win->super.s_info, flavor);
+        opal_output_verbose(10, ompi_osc_base_framework.framework_output, "Found osc component %s at priority %d",
+                            component->osc_version.mca_component_name, priority);
         if (priority < 0) {
             continue;
         }

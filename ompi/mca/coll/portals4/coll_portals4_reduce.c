@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2015      Sandia National Laboratories. All rights reserved.
- * Copyright (c) 2015      Bull SAS.  All rights reserved.
+ * Copyright (c) 2015-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2017      IBM Corporation.  All rights reserved.

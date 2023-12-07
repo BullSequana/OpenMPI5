@@ -25,6 +25,7 @@
  * Copyright (c) 2020-2021 Google, LLC. All rights reserved.
  * Copyright (c) 2019-2021 Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -118,6 +119,8 @@ ompi_osc_base_module_t ompi_osc_rdma_module_rdma_template = {
 
     .osc_put = ompi_osc_rdma_put,
     .osc_get = ompi_osc_rdma_get,
+    .osc_put_notify = NULL,
+    .osc_get_notify = NULL,
     .osc_accumulate = ompi_osc_rdma_accumulate,
     .osc_compare_and_swap = ompi_osc_rdma_compare_and_swap,
     .osc_fetch_and_op = ompi_osc_rdma_fetch_and_op,

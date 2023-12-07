@@ -18,6 +18,7 @@
  * Copyright (c) 2019      Mellanox Technologies. All rights reserved.
  * Copyright (c) 2020      Amazon.com, Inc. or its affiliates.
  *                         All Rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -453,6 +454,37 @@ int ompi_coll_tuned_alltoallv_intra_dec_fixed(const void *sbuf, const int *scoun
                                                     alg);
 }
 
+/*
+ *      Function:       - selects alltoallw algorithm to use
+ *      Accepts:        - same arguments as MPI_Alltoallw()
+ *      Returns:        - MPI_SUCCESS or error code
+ */
+int ompi_coll_tuned_alltoallw_intra_dec_fixed(const void *sbuf, const int *scounts, const int *sdisps,
+                                              struct ompi_datatype_t * const *sdtype,
+                                              void *rbuf, const int *rcounts, const int *rdisps,
+                                              struct ompi_datatype_t * const *rdtype,
+                                              struct ompi_communicator_t *comm,
+                                              mca_coll_base_module_t *module)
+{
+    int communicator_size;
+    int alg;
+    communicator_size = ompi_comm_size(comm);
+
+    OPAL_OUTPUT((ompi_coll_tuned_stream, "ompi_coll_tuned_alltoallw_intra_dec_fixed com_size %d",
+                 communicator_size));
+    /** Algorithms:
+     *  {1, "Basic"},
+     *  {2, "Pairwise"},
+     *  {3, "Shifted_pairwise"},
+     *
+     * We can only optimize based on com size
+     */
+    alg = 1;
+    return ompi_coll_tuned_alltoallw_intra_do_this (sbuf, scounts, sdisps, sdtype,
+                                                    rbuf, rcounts, rdisps, rdtype,
+                                                    comm, module,
+                                                    alg);
+}
 
 /*
  *	barrier_intra_dec
@@ -1411,7 +1443,7 @@ int ompi_coll_tuned_gather_intra_dec_fixed(const void *sbuf, int scount,
      * should be uniform across ranks.
      */
     if (communicator_size < 4) {
-        if (total_dsize < 2) {
+        if (total_dsize < 2 && ! ompi_coll_tuned_heterogenous_ddt_support) {
             alg = 3;
         } else if (total_dsize < 4) {
             alg = 1;
@@ -1421,8 +1453,10 @@ int ompi_coll_tuned_gather_intra_dec_fixed(const void *sbuf, int scount,
             alg = 1;
         } else if (total_dsize < 131072) {
             alg = 2;
-        } else {
+        } else if (! ompi_coll_tuned_heterogenous_ddt_support) {
             alg = 3;
+        } else {
+            alg = 2;
         }
     } else if (communicator_size < 8) {
         if (total_dsize < 1024) {
@@ -1433,8 +1467,10 @@ int ompi_coll_tuned_gather_intra_dec_fixed(const void *sbuf, int scount,
             alg = 2;
         } else if (total_dsize < 262144) {
             alg = 1;
-        } else {
+        } else if (! ompi_coll_tuned_heterogenous_ddt_support) {
             alg = 3;
+        } else {
+            alg = 2;
         }
     } else if (communicator_size < 256) {
         alg = 2;
@@ -1559,4 +1595,67 @@ int ompi_coll_tuned_scatter_intra_dec_fixed(const void *sbuf, int scount,
                                                   rbuf, rcount, rdtype,
                                                   root, comm, module,
                                                   alg, 0, 0);
+}
+
+
+/*
+ *      Function:       - selects neighbor_alltoallv algorithm to use
+ *      Accepts:        - same arguments as MPI_Neighbor_alltoallv()
+ *      Returns:        - MPI_SUCCESS or error code
+ */
+int ompi_coll_tuned_neighbor_alltoallv_intra_dec_fixed(const void *sbuf, const int *scounts, const int *sdisps,
+                                                       struct ompi_datatype_t *sdtype,
+                                                       void *rbuf, const int *rcounts, const int *rdisps,
+                                                       struct ompi_datatype_t *rdtype,
+                                                       struct ompi_communicator_t *comm,
+                                                       mca_coll_base_module_t *module)
+{
+    int communicator_size;
+    int alg;
+    communicator_size = ompi_comm_size(comm);
+
+    OPAL_OUTPUT((ompi_coll_tuned_stream, "ompi_coll_tuned_neighbor_alltoallv_intra_dec_fixed com_size %d",
+                 communicator_size));
+    /** Algorithms:
+     *  {1, "Basic"},
+     *  {2, "Controlled"},
+     *
+     * We can only optimize based on com size
+     */
+    alg = 1;
+    return ompi_coll_tuned_neighbor_alltoallv_intra_do_this (sbuf, scounts, sdisps, sdtype,
+                                                             rbuf, rcounts, rdisps, rdtype,
+                                                             comm, module,
+                                                             alg);
+}
+
+/*
+ *      Function:       - selects neighbor_alltoallw algorithm to use
+ *      Accepts:        - same arguments as MPI_Neighbor_alltoallv()
+ *      Returns:        - MPI_SUCCESS or error code
+ */
+int ompi_coll_tuned_neighbor_alltoallw_intra_dec_fixed(const void *sbuf, const int *scounts, const MPI_Aint *sdisps,
+                                                       struct ompi_datatype_t * const *sdtype,
+                                                       void *rbuf, const int *rcounts, const MPI_Aint *rdisps,
+                                                       struct ompi_datatype_t * const *rdtype,
+                                                       struct ompi_communicator_t *comm,
+                                                       mca_coll_base_module_t *module)
+{
+    int communicator_size;
+    int alg;
+    communicator_size = ompi_comm_size(comm);
+
+    OPAL_OUTPUT((ompi_coll_tuned_stream, "ompi_coll_tuned_neighbor_alltoallw_intra_dec_fixed com_size %d",
+                 communicator_size));
+    /** Algorithms:
+     *  {1, "Basic"},
+     *  {2, "Controlled"},
+     *
+     * We can only optimize based on com size
+     */
+    alg = 1;
+    return ompi_coll_tuned_neighbor_alltoallw_intra_do_this (sbuf, scounts, sdisps, sdtype,
+                                                             rbuf, rcounts, rdisps, rdtype,
+                                                             comm, module,
+                                                             alg);
 }

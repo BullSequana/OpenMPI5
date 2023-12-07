@@ -13,6 +13,7 @@
  * Copyright (c) 2016      Intel, Inc.  All rights reserved.
  * Copyright (c) 2018      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -31,8 +32,9 @@
 #include "ompi/mca/coll/base/base.h"
 #include "ompi/mca/coll/base/coll_base_topo.h"
 #include "coll_tuned.h"
-#include "coll_tuned_dynamic_rules.h"
-#include "coll_tuned_dynamic_file.h"
+#include "ompi/mca/coll/base/coll_base_dynamic_rules.h"
+#include "ompi/mca/coll/base/coll_base_dynamic_file.h"
+#include "ompi/mca/coll/base/coll_base_util.h"
 
 static int tuned_module_enable(mca_coll_base_module_t *module,
                    struct ompi_communicator_t *comm);
@@ -99,18 +101,22 @@ ompi_coll_tuned_comm_query(struct ompi_communicator_t *comm, int *priority)
     tuned_module->super.coll_allreduce  = ompi_coll_tuned_allreduce_intra_dec_fixed;
     tuned_module->super.coll_alltoall   = ompi_coll_tuned_alltoall_intra_dec_fixed;
     tuned_module->super.coll_alltoallv  = ompi_coll_tuned_alltoallv_intra_dec_fixed;
-    tuned_module->super.coll_alltoallw  = NULL;
+    tuned_module->super.coll_alltoallw  = ompi_coll_tuned_alltoallw_intra_dec_fixed;
     tuned_module->super.coll_barrier    = ompi_coll_tuned_barrier_intra_dec_fixed;
     tuned_module->super.coll_bcast      = ompi_coll_tuned_bcast_intra_dec_fixed;
     tuned_module->super.coll_exscan     = NULL;
     tuned_module->super.coll_gather     = ompi_coll_tuned_gather_intra_dec_fixed;
     tuned_module->super.coll_gatherv    = NULL;
+    tuned_module->super.coll_gatherw    = NULL;
     tuned_module->super.coll_reduce     = ompi_coll_tuned_reduce_intra_dec_fixed;
     tuned_module->super.coll_reduce_scatter = ompi_coll_tuned_reduce_scatter_intra_dec_fixed;
     tuned_module->super.coll_reduce_scatter_block = ompi_coll_tuned_reduce_scatter_block_intra_dec_fixed;
     tuned_module->super.coll_scan       = NULL;
     tuned_module->super.coll_scatter    = ompi_coll_tuned_scatter_intra_dec_fixed;
     tuned_module->super.coll_scatterv   = NULL;
+    tuned_module->super.coll_scatterw   = NULL;
+    tuned_module->super.coll_neighbor_alltoallv = ompi_coll_tuned_neighbor_alltoallv_intra_dec_fixed;
+    tuned_module->super.coll_neighbor_alltoallw = ompi_coll_tuned_neighbor_alltoallw_intra_dec_fixed;
 
     return &(tuned_module->super);
 }
@@ -123,6 +129,7 @@ ompi_coll_tuned_forced_getvalues( enum COLLTYPE type,
                                   coll_tuned_force_algorithm_params_t *forced_values )
 {
     coll_tuned_force_algorithm_mca_param_indices_t* mca_params;
+    mca_base_var_source_t source;
     const int *tmp = NULL;
 
     mca_params = &(ompi_coll_tuned_forced_params[type]);
@@ -132,8 +139,9 @@ ompi_coll_tuned_forced_getvalues( enum COLLTYPE type,
      * to see if it was set explicitly (if we suppose that setting it to 0 enable the
      * default behavior) or not.
      */
-    mca_base_var_get_value(mca_params->algorithm_param_index, &tmp, NULL, NULL);
+    mca_base_var_get_value(mca_params->algorithm_param_index, &tmp, &source, NULL);
     forced_values->algorithm = tmp ? tmp[0] : 0;
+    forced_values->user_defined = tmp ? (MCA_BASE_VAR_SOURCE_DEFAULT != source) : false;
 
     if( BARRIER != type ) {
         mca_base_var_get_value(mca_params->segsize_param_index, &tmp, NULL, NULL);
@@ -158,8 +166,8 @@ ompi_coll_tuned_forced_getvalues( enum COLLTYPE type,
         }                                                               \
         if( NULL != mca_coll_tuned_component.all_base_rules ) {         \
             (TMOD)->com_rules[(TYPE)]                                   \
-                = ompi_coll_tuned_get_com_rule_ptr( mca_coll_tuned_component.all_base_rules, \
-                                                    (TYPE), size );     \
+                = ompi_coll_base_get_com_rule_ptr( mca_coll_tuned_component.all_base_rules, \
+                                                   (TYPE), nnodes, size );                 \
             if( NULL != (TMOD)->com_rules[(TYPE)] ) {                   \
                 need_dynamic_decision = 1;                              \
             }                                                           \
@@ -177,7 +185,9 @@ static int
 tuned_module_enable( mca_coll_base_module_t *module,
                      struct ompi_communicator_t *comm )
 {
-    int size;
+    /* Variables used in COLL_TUNED_EXECUTE_IF_DYNAMIC macro */
+    int size, nnodes;
+
     mca_coll_tuned_module_t *tuned_module = (mca_coll_tuned_module_t *) module;
     mca_coll_base_comm_t *data = NULL;
 
@@ -190,6 +200,9 @@ tuned_module_enable( mca_coll_base_module_t *module,
         size = ompi_comm_size(comm);
     }
 
+    /* Get the number of nodes in communicator */
+    nnodes = ompi_coll_base_get_nnodes(comm);
+    OPAL_OUTPUT((ompi_coll_tuned_stream,"coll:tuned:module_init nnodes %d.", nnodes));
     /**
      * we still malloc data as it is used by the TUNED modules
      * if we don't allocate it and fall back to a BASIC module routine then confuses debuggers
@@ -225,7 +238,7 @@ tuned_module_enable( mca_coll_base_module_t *module,
         COLL_TUNED_EXECUTE_IF_DYNAMIC(tuned_module, ALLTOALLV,
                                       tuned_module->super.coll_alltoallv  = ompi_coll_tuned_alltoallv_intra_dec_dynamic);
         COLL_TUNED_EXECUTE_IF_DYNAMIC(tuned_module, ALLTOALLW,
-                                      tuned_module->super.coll_alltoallw  = NULL);
+                                      tuned_module->super.coll_alltoallw  = ompi_coll_tuned_alltoallw_intra_dec_dynamic);//NOSONAR
         COLL_TUNED_EXECUTE_IF_DYNAMIC(tuned_module, BARRIER,
                                       tuned_module->super.coll_barrier    = ompi_coll_tuned_barrier_intra_dec_dynamic);
         COLL_TUNED_EXECUTE_IF_DYNAMIC(tuned_module, BCAST,
@@ -248,6 +261,10 @@ tuned_module_enable( mca_coll_base_module_t *module,
                                       tuned_module->super.coll_scatter    = ompi_coll_tuned_scatter_intra_dec_dynamic);
         COLL_TUNED_EXECUTE_IF_DYNAMIC(tuned_module, SCATTERV,
                                       tuned_module->super.coll_scatterv   = NULL);
+        COLL_TUNED_EXECUTE_IF_DYNAMIC(tuned_module, NEIGHBOR_ALLTOALLV,
+                                      tuned_module->super.coll_neighbor_alltoallv = ompi_coll_tuned_neighbor_alltoallv_intra_dec_dynamic);//NOSONAR (Macro)
+        COLL_TUNED_EXECUTE_IF_DYNAMIC(tuned_module, NEIGHBOR_ALLTOALLW,
+                                      tuned_module->super.coll_neighbor_alltoallw = ompi_coll_tuned_neighbor_alltoallw_intra_dec_dynamic);//NOSONAR (Macro)
     }
 
     /* general n fan out tree */

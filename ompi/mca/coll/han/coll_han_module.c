@@ -2,11 +2,11 @@
  * Copyright (c) 2018-2020 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
- * Copyright (c) 2020      Bull S.A.S. All rights reserved.
  * Copyright (c) 2021      Cisco Systems, Inc.  All rights reserved
  * Copyright (c) 2021      Triad National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2022      IBM Corporation. All rights reserved
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -41,13 +41,15 @@ static int mca_coll_han_module_disable(mca_coll_base_module_t * module,
     } while (0)
 
 /*
- * Module constructor
+ * Module destructor
  */
 static void han_module_clear(mca_coll_han_module_t *han_module)
 {
     CLEAN_PREV_COLL(han_module, allgather);
     CLEAN_PREV_COLL(han_module, allgatherv);
     CLEAN_PREV_COLL(han_module, allreduce);
+    CLEAN_PREV_COLL(han_module, alltoall);
+    CLEAN_PREV_COLL(han_module, alltoallv);
     CLEAN_PREV_COLL(han_module, barrier);
     CLEAN_PREV_COLL(han_module, bcast);
     CLEAN_PREV_COLL(han_module, reduce);
@@ -74,7 +76,7 @@ static void mca_coll_han_module_construct(mca_coll_han_module_t * module)
     module->cached_up_comms = NULL;
     module->cached_vranks = NULL;
     module->cached_topo = NULL;
-    module->is_mapbycore = false;
+    module->is_mapbycore = true;
     module->storage_initialized = false;
     for( i = 0; i < NB_TOPO_LVL; i++ ) {
         module->sub_comm[i] = NULL;
@@ -84,6 +86,23 @@ static void mca_coll_han_module_construct(mca_coll_han_module_t * module)
     }
 
     module->dynamic_errors = 0;
+
+    module->sub_ranks = NULL;
+    module->global_ranks = NULL;
+    memset(module->maximum_size, 0, (NB_TOPO_LVL-1)*sizeof(int));
+
+    module->topo_tree=NULL;
+
+    /* Assume we have up gatherw, checked later */
+    module->have_up_gatherw = true;
+    module->have_up_igatherw = true;
+
+    /* Even case in split allgather algorithm */
+    module->have_even_low_size = true;
+
+    /* Cache for allgather specific communicator in case of
+     * simple_splitted algorithm */
+    module->cached_allgather_split_comms = NULL;
 
     han_module_clear(module);
 }
@@ -139,13 +158,33 @@ mca_coll_han_module_destruct(mca_coll_han_module_t * module)
         module->cached_topo = NULL;
     }
     for(i=0 ; i<NB_TOPO_LVL ; i++) {
-        if(NULL != module->sub_comm[i]) {
+        if(NULL != module->sub_comm[i]
+           && MPI_COMM_SELF != module->sub_comm[i]) {
             ompi_comm_free(&(module->sub_comm[i]));
         }
     }
 
+    if (module->sub_ranks != NULL) {
+        free(module->sub_ranks);
+        module->sub_ranks = NULL;
+    }
+    if (module->global_ranks != NULL) {
+        free(module->global_ranks);
+        module->global_ranks = NULL;
+    }
+
+    if (NULL != module->topo_tree) {
+        mca_coll_han_smash_topo_tree(module);
+    }
+
+    if (module->cached_allgather_split_comms != NULL) {
+        ompi_comm_free(&module->cached_allgather_split_comms);
+    }
+
     OBJ_RELEASE_IF_NOT_NULL(module->previous_allgather_module);
     OBJ_RELEASE_IF_NOT_NULL(module->previous_allreduce_module);
+    OBJ_RELEASE_IF_NOT_NULL(module->previous_alltoall_module);
+    OBJ_RELEASE_IF_NOT_NULL(module->previous_alltoallv_module);
     OBJ_RELEASE_IF_NOT_NULL(module->previous_bcast_module);
     OBJ_RELEASE_IF_NOT_NULL(module->previous_gather_module);
     OBJ_RELEASE_IF_NOT_NULL(module->previous_reduce_module);
@@ -234,6 +273,17 @@ mca_coll_han_comm_query(struct ompi_communicator_t * comm, int *priority)
         }
     }
 
+    if (mca_coll_han_component.fake_topo_split) {
+        han_module->nb_topo_lvl = NB_TOPO_LVL-1;
+    } else {
+        han_module->nb_topo_lvl = 1;
+        for (int split_lvl = 0 ; split_lvl < NB_SPLIT_LVL ; split_lvl++) {
+            if (mca_coll_han_component.split_requested[split_lvl]) {
+                han_module->nb_topo_lvl++;
+            }
+        }
+    }
+
     if( !ompi_group_have_remote_peers(comm->c_local_group)
             && INTRA_NODE != han_module->topologic_level ) {
         /* The group only contains local processes, and this is not a
@@ -246,14 +296,19 @@ mca_coll_han_comm_query(struct ompi_communicator_t * comm, int *priority)
     }
 
     han_module->super.coll_module_enable = han_module_enable;
-    han_module->super.coll_alltoall   = NULL;
-    han_module->super.coll_alltoallv  = NULL;
+    han_module->super.coll_agree         = NULL;
+    han_module->super.coll_iagree        = NULL;
+
+    han_module->super.coll_alltoall   = mca_coll_han_alltoall_intra_dynamic;
+    han_module->super.coll_alltoallv  = mca_coll_han_alltoallv_intra_dynamic;
     han_module->super.coll_alltoallw  = NULL;
     han_module->super.coll_exscan     = NULL;
     han_module->super.coll_gatherv    = NULL;
+    han_module->super.coll_gatherw    = NULL;
     han_module->super.coll_reduce_scatter = NULL;
     han_module->super.coll_scan       = NULL;
     han_module->super.coll_scatterv   = NULL;
+    han_module->super.coll_scatterw   = NULL;
     han_module->super.coll_barrier    = mca_coll_han_barrier_intra_dynamic;
     han_module->super.coll_scatter    = mca_coll_han_scatter_intra_dynamic;
     han_module->super.coll_reduce     = mca_coll_han_reduce_intra_dynamic;
@@ -308,6 +363,8 @@ han_module_enable(mca_coll_base_module_t * module,
     HAN_SAVE_PREV_COLL_API(allgather);
     HAN_SAVE_PREV_COLL_API(allgatherv);
     HAN_SAVE_PREV_COLL_API(allreduce);
+    HAN_SAVE_PREV_COLL_API(alltoall);
+    HAN_SAVE_PREV_COLL_API(alltoallv);
     HAN_SAVE_PREV_COLL_API(barrier);
     HAN_SAVE_PREV_COLL_API(bcast);
     HAN_SAVE_PREV_COLL_API(gather);
@@ -324,6 +381,8 @@ handle_error:
     OBJ_RELEASE_IF_NOT_NULL(han_module->previous_allgather_module);
     OBJ_RELEASE_IF_NOT_NULL(han_module->previous_allgatherv_module);
     OBJ_RELEASE_IF_NOT_NULL(han_module->previous_allreduce_module);
+    OBJ_RELEASE_IF_NOT_NULL(han_module->previous_alltoall_module);
+    OBJ_RELEASE_IF_NOT_NULL(han_module->previous_alltoallv_module);
     OBJ_RELEASE_IF_NOT_NULL(han_module->previous_bcast_module);
     OBJ_RELEASE_IF_NOT_NULL(han_module->previous_gather_module);
     OBJ_RELEASE_IF_NOT_NULL(han_module->previous_reduce_module);
@@ -344,6 +403,8 @@ mca_coll_han_module_disable(mca_coll_base_module_t * module,
     OBJ_RELEASE_IF_NOT_NULL(han_module->previous_allgather_module);
     OBJ_RELEASE_IF_NOT_NULL(han_module->previous_allgatherv_module);
     OBJ_RELEASE_IF_NOT_NULL(han_module->previous_allreduce_module);
+    OBJ_RELEASE_IF_NOT_NULL(han_module->previous_alltoall_module);
+    OBJ_RELEASE_IF_NOT_NULL(han_module->previous_alltoallv_module);
     OBJ_RELEASE_IF_NOT_NULL(han_module->previous_barrier_module);
     OBJ_RELEASE_IF_NOT_NULL(han_module->previous_bcast_module);
     OBJ_RELEASE_IF_NOT_NULL(han_module->previous_gather_module);

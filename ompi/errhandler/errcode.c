@@ -19,6 +19,7 @@
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2022      Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -115,6 +116,7 @@ static ompi_mpi_errcode_t ompi_t_err_pvar_no_startstop;
 static ompi_mpi_errcode_t ompi_t_err_pvar_no_write;
 static ompi_mpi_errcode_t ompi_t_err_pvar_no_atomic;
 static ompi_mpi_errcode_t ompi_err_rma_range;
+static ompi_mpi_errcode_t ompi_err_rma_notif_range;
 static ompi_mpi_errcode_t ompi_err_rma_attach;
 static ompi_mpi_errcode_t ompi_err_rma_flavor;
 static ompi_mpi_errcode_t ompi_err_rma_shared;
@@ -233,6 +235,7 @@ int ompi_mpi_errcode_init (void)
     CONSTRUCT_ERRCODE( ompi_t_err_pvar_no_write, MPI_T_ERR_PVAR_NO_WRITE, "MPI_T_ERR_PVAR_NO_WRITE: variable cannot be written or reset" );
     CONSTRUCT_ERRCODE( ompi_t_err_pvar_no_atomic, MPI_T_ERR_PVAR_NO_ATOMIC, "MPI_T_ERR_PVAR_NO_ATOMIC: variable cannot be read and written atomically" );
     CONSTRUCT_ERRCODE( ompi_err_rma_range, MPI_ERR_RMA_RANGE, "MPI_ERR_RMA_RANGE: invalid RMA address range" );
+    CONSTRUCT_ERRCODE( ompi_err_rma_notif_range, MPI_ERR_RMA_NOTIF_RANGE, "MPI_ERR_RMA_NOTIF_RANGE: invalid RMA notification ID range" );
     CONSTRUCT_ERRCODE( ompi_err_rma_attach, MPI_ERR_RMA_ATTACH, "MPI_ERR_RMA_ATTACH: Could not attach RMA segment" );
     CONSTRUCT_ERRCODE( ompi_err_rma_flavor, MPI_ERR_RMA_FLAVOR, "MPI_ERR_RMA_FLAVOR: Invalid type of window" );
     CONSTRUCT_ERRCODE( ompi_err_rma_shared, MPI_ERR_RMA_SHARED, "MPI_ERR_RMA_SHARED: Memory cannot be shared" );
@@ -350,6 +353,7 @@ int ompi_mpi_errcode_finalize (void)
     OBJ_DESTRUCT(&ompi_t_err_pvar_no_write);
     OBJ_DESTRUCT(&ompi_t_err_pvar_no_atomic);
     OBJ_DESTRUCT(&ompi_err_rma_range);
+    OBJ_DESTRUCT(&ompi_err_rma_notif_range);
     OBJ_DESTRUCT(&ompi_err_rma_attach);
     OBJ_DESTRUCT(&ompi_err_rma_flavor);
     OBJ_DESTRUCT(&ompi_err_rma_shared);

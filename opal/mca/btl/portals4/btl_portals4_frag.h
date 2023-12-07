@@ -12,7 +12,7 @@
  *                         All rights reserved.
  * Copyright (c) 2011-2015 Los Alamos National Security, LLC.
  *                         All rights reserved.
- * Copyright (c) 2014      Bull SAS.  All rights reserved.
+ * Copyright (c) 2014-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow

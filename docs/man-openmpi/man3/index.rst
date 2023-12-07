@@ -481,4 +481,20 @@ MPI API manual pages (section 3)
    MPIX_Comm_shrink.3.rst
    MPIX_Query_cuda_support.3.rst
    MPIX_Query_rocm_support.3.rst
+   MPIX_Get_notify.3.rst
+   MPIX_Palltoall_init.3.rst
+   MPIX_Palltoallr_init.3.rst
+   MPIX_Palltoallv_init.3.rst
+   MPIX_Palltoallvr_init.3.rst
+   MPIX_Pbcast_init.3.rst
+   MPIX_Pbcastr_init.3.rst
+   MPIX_Pgather_init.3.rst
+   MPIX_Pgatherr_init.3.rst
+   MPIX_Preduce_init.3.rst
+   MPIX_Preducer_init.3.rst
+   MPIX_Put_notify.3.rst
+   MPIX_Win_allocate_notify.3.rst
+   MPIX_Win_create_notify.3.rst
+   MPIX_Win_test_notify.3.rst
+   MPIX_Win_wait_notify.3.rst
    OMPI_Affinity_str.3.rst

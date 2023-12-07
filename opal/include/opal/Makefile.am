@@ -11,6 +11,7 @@
 #                         All rights reserved.
 # Copyright (c) 2007      Cisco Systems, Inc.  All rights reserved.
 # Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+# Copyright (c) 2023-2024 BULL S.A.S. All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
@@ -30,7 +31,8 @@ headers += \
 	opal/frameworks.h \
 	opal/opal_portable_platform.h \
 	opal/opal_portable_platform_real.h \
-	opal/opal_cuda.h
+	opal/opal_cuda.h \
+	opal/opal_touch_pages.h
 
 nodist_headers += \
 	opal/version.h

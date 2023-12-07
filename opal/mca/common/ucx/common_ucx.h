@@ -6,6 +6,7 @@
  * Copyright (c) 2019-2020 High Performance Computing Center Stuttgart,
  *                         University of Stuttgart.  All rights reserved.
  * Copyright (c) 2023      NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2023-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -93,6 +94,11 @@ typedef struct opal_common_ucx_module {
     bool opal_mem_hooks;
     char **tls;
     char **devices;
+    char **overwrite_tls;
+    char **blacklist_tls;
+    char *updated_tls;
+    bool use_updated_tls;
+    bool updated_tls_checked;
 } opal_common_ucx_module_t;
 
 typedef struct opal_common_ucx_del_proc {
@@ -128,6 +134,7 @@ OPAL_DECLSPEC int opal_common_ucx_del_procs_nofence(opal_common_ucx_del_proc_t *
                                                     size_t my_rank, size_t max_disconnect,
                                                     ucp_worker_h worker);
 OPAL_DECLSPEC void opal_common_ucx_mca_var_register(const mca_base_component_t *component);
+OPAL_DECLSPEC int opal_common_ucx_update_ucp_config(ucp_config_t *config);
 
 /**
  * Load an integer value of \c size bytes from \c ptr and cast it to uint64_t.

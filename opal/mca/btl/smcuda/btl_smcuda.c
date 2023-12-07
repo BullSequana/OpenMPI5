@@ -23,6 +23,7 @@
  * Copyright (c) 2022      IBM Corporation. All rights reserved
  * Copyright (c) 2023      Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -612,7 +613,6 @@ int mca_btl_smcuda_add_procs(struct mca_btl_base_module_t *btl, size_t nprocs,
      */
     (void) opal_atomic_add_fetch_32(&mca_btl_smcuda_component.sm_seg->module_seg->seg_inited, 1);
     while (n_local_procs > mca_btl_smcuda_component.sm_seg->module_seg->seg_inited) {
-        opal_progress();
         opal_atomic_rmb();
     }
 

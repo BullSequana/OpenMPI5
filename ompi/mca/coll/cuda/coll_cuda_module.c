@@ -5,6 +5,7 @@
  * Copyright (c) 2014      NVIDIA Corporation.  All rights reserved.
  * Copyright (c) 2019      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
+ * Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -102,12 +103,14 @@ mca_coll_cuda_comm_query(struct ompi_communicator_t *comm,
     cuda_module->super.coll_exscan     = mca_coll_cuda_exscan;
     cuda_module->super.coll_gather     = NULL;
     cuda_module->super.coll_gatherv    = NULL;
+    cuda_module->super.coll_gatherw    = NULL;
     cuda_module->super.coll_reduce     = mca_coll_cuda_reduce;
     cuda_module->super.coll_reduce_scatter = NULL;
     cuda_module->super.coll_reduce_scatter_block = mca_coll_cuda_reduce_scatter_block;
     cuda_module->super.coll_scan       = mca_coll_cuda_scan;
     cuda_module->super.coll_scatter    = NULL;
     cuda_module->super.coll_scatterv   = NULL;
+    cuda_module->super.coll_scatterw   = NULL;
 
     return &(cuda_module->super);
 }

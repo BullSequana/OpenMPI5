@@ -3,6 +3,8 @@
   Copyright (c) 2015-2019 Research Organization for Information Science
                           and Technology (RIST).  All rights reserved.
   $COPYRIGHT$
+ Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
+ * $COPYRIGHT$
 
   Additional copyrights may follow
 
@@ -97,6 +99,9 @@ struct mca_coll_hcoll_component_t {
     opal_free_list_t requests;
     opal_free_list_t dtypes;
     int derived_types_support_enabled;
+
+    /* Coll han compatibility: do not free hcoll context when world is already freed */
+    bool is_world_freed;
 };
 typedef struct mca_coll_hcoll_component_t mca_coll_hcoll_component_t;
 
@@ -137,6 +142,8 @@ struct mca_coll_hcoll_module_t {
     mca_coll_base_module_t *previous_gather_module;
     mca_coll_base_module_gatherv_fn_t previous_gatherv;
     mca_coll_base_module_t *previous_gatherv_module;
+    mca_coll_base_module_gatherw_fn_t previous_gatherw;
+    mca_coll_base_module_t *previous_gatherw_module;
     mca_coll_base_module_scatterv_fn_t previous_scatterv;
     mca_coll_base_module_t *previous_scatterv_module;
     mca_coll_base_module_reduce_scatter_fn_t previous_reduce_scatter;

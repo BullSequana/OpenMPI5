@@ -24,10 +24,10 @@
  * Copyright (c) 2021-2022 Google, LLC. All rights reserved.
  * Copyright (c) 2021-2022 Amazon.com, Inc. or its affiliates.  All Rights
  *                         reserved.
- * Copyright (c) 2021      Bull S.A.S. All rights reserved.
  * Copyright (c) 2018      Triad National Security, LLC. All rights
  * Copyright (c) 2018-2022 Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -235,6 +235,8 @@
 /* MPI_Fint is the same as ompi_fortran_INTEGER_t */
 #define MPI_Fint ompi_fortran_integer_t
 #endif
+
+#undef OMPI_MPI_NOTIFICATIONS
 
 #endif /* #ifndef OMPI_CONFIG_H */
 
@@ -747,6 +749,7 @@ enum {
 #define MPI_ERR_REVOKED               77
 #define MPI_ERR_SESSION               78
 #define MPI_ERR_VALUE_TOO_LARGE       79
+#define MPI_ERR_RMA_NOTIF_RANGE       80
 
 /* Per MPI-3 p349 47, MPI_ERR_LASTCODE must be >= the last predefined
    MPI_ERR_<foo> code. Set the last code to allow some room for adding

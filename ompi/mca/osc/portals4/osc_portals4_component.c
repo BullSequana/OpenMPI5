@@ -12,6 +12,7 @@
  * Copyright (c) 2018-2022 Amazon.com, Inc. or its affiliates.  All Rights reserved.
  * Copyright (c) 2020      High Performance Computing Center Stuttgart,
  *                         University of Stuttgart.  All rights reserved.
+ * Copyright (c) 2016-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -104,7 +105,12 @@ ompi_osc_portals4_module_t ompi_osc_portals4_module_template = {
         .osc_flush_all = ompi_osc_portals4_flush_all,
         .osc_flush_local = ompi_osc_portals4_flush_local,
         .osc_flush_local_all = ompi_osc_portals4_flush_local_all,
-    }
+    },
+
+    .ct_h = PTL_INVALID_HANDLE,
+    .md_h = PTL_INVALID_HANDLE,
+    .req_md_h = PTL_INVALID_HANDLE,
+    .data_me_h = PTL_INVALID_HANDLE,
 };
 
 
@@ -615,10 +621,10 @@ component_select(struct ompi_win_t *win, void **base, size_t size, int disp_unit
 
  error:
     /* BWB: FIX ME: This is all wrong... */
-    if (0 != module->ct_h) PtlCTFree(module->ct_h);
-    if (0 != module->data_me_h) PtlMEUnlink(module->data_me_h);
-    if (0 != module->req_md_h) PtlMDRelease(module->req_md_h);
-    if (0 != module->md_h) PtlMDRelease(module->md_h);
+    if (!PtlHandleIsEqual(PTL_INVALID_HANDLE, module->ct_h)) PtlCTFree(module->ct_h);
+    if (!PtlHandleIsEqual(PTL_INVALID_HANDLE, module->data_me_h)) PtlMEUnlink(module->data_me_h);
+    if (!PtlHandleIsEqual(PTL_INVALID_HANDLE,  module->req_md_h)) PtlMDRelease(module->req_md_h);
+    if (!PtlHandleIsEqual(PTL_INVALID_HANDLE, module->md_h)) PtlMDRelease(module->md_h);
     if (NULL != module->comm) ompi_comm_free(&module->comm);
     if (NULL != module) free(module);
 
@@ -655,11 +661,11 @@ ompi_osc_portals4_free(struct ompi_win_t *win)
     PtlMEUnlink(module->control_me_h);
     PtlMEUnlink(module->data_me_h);
     PtlMDRelease(module->md_h);
-    if (module->origin_iovec_md_h != PTL_INVALID_HANDLE) {
+    if (!PtlHandleIsEqual(module->origin_iovec_md_h, PTL_INVALID_HANDLE)) {
         PtlMDRelease(module->origin_iovec_md_h);
         free(module->origin_iovec_list);
     }
-    if (module->result_iovec_md_h != PTL_INVALID_HANDLE) {
+    if (!PtlHandleIsEqual(module->result_iovec_md_h, PTL_INVALID_HANDLE)) {
         PtlMDRelease(module->result_iovec_md_h);
         free(module->result_iovec_list);
     }

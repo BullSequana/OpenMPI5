@@ -17,6 +17,7 @@
 # Copyright (c) 2013      Intel Corporation.  All rights reserved.
 # Copyright (c) 2017      Amazon.com, Inc. or its affiliates.
 #                         All Rights reserved.
+# Copyright (c) 2020-2023 BULL S.A.S. All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
@@ -100,6 +101,18 @@ EXTRA_DIST = \
 	platform/intel/bend/linux-optimized \
 	platform/intel/bend/linux-optimized.conf \
 	platform/mellanox/optimized \
-	platform/mellanox/optimized.conf
+	platform/mellanox/optimized.conf \
+	platform/bull/optimized \
+	platform/bull/optimized.conf \
+	platform/bull/profile/ib_optimized.core.conf \
+	platform/bull/profile/ib_tuned_collectives.amd.rules \
+	platform/bull/profile/bxi_optimized.core.conf \
+	platform/bull/profile/bxi_optimized.knl.conf \
+	platform/bull/profile/bxi_optimized.amd.conf \
+	platform/bull/profile/bxi_optimized.pml_bxi_neba.conf \
+	platform/bull/profile/bxi_tuned_collectives.knl.rules \
+	platform/bull/profile/bxi_tuned_collectives.amd.rules \
+	platform/bull/profile/bxi_bullnbc_collectives.knl.rules \
+	platform/bull/profile/bxi_bullnbc_collectives.amd.rules
 
 dist_opaldata_DATA = openmpi-valgrind.supp

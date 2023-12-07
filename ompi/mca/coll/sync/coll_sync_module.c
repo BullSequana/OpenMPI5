@@ -13,6 +13,7 @@
  * Copyright (c) 2016      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2018-2019 Intel, Inc.  All rights reserved.
+ * Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -125,11 +126,13 @@ mca_coll_sync_comm_query(struct ompi_communicator_t *comm,
     sync_module->super.coll_exscan     = mca_coll_sync_exscan;
     sync_module->super.coll_gather     = mca_coll_sync_gather;
     sync_module->super.coll_gatherv    = mca_coll_sync_gatherv;
+    sync_module->super.coll_gatherw    = NULL;
     sync_module->super.coll_reduce     = mca_coll_sync_reduce;
     sync_module->super.coll_reduce_scatter = mca_coll_sync_reduce_scatter;
     sync_module->super.coll_scan       = mca_coll_sync_scan;
     sync_module->super.coll_scatter    = mca_coll_sync_scatter;
     sync_module->super.coll_scatterv   = mca_coll_sync_scatterv;
+    sync_module->super.coll_scatterw   = NULL;
 
     return &(sync_module->super);
 }

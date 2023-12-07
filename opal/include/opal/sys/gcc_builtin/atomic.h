@@ -18,6 +18,7 @@
  * Copyright (c) 2018      Triad National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2021      Google, LLC. All rights reserved.
+ * Copyright (c) 2019-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2022      Amazon.com, Inc. or its affiliates.
  *                         All Rights reserved.
  * $COPYRIGHT$
@@ -26,6 +27,9 @@
  *
  * $HEADER$
  */
+
+#ifndef OPAL_SYS_ARCH_ATOMIC_LLSC_H
+#define OPAL_SYS_ARCH_ATOMIC_LLSC_H 1
 
 #ifndef OPAL_SYS_ARCH_ATOMIC_H
 #define OPAL_SYS_ARCH_ATOMIC_H 1
@@ -121,6 +125,48 @@ static inline bool opal_atomic_compare_exchange_strong_rel_64(opal_atomic_int64_
 }
 
 #include "opal/sys/atomic_impl_ptr_cswap.h"
+
+#define OPAL_GCC_MAKE_ATOMIC_STORE(type, bits)                                  \
+static inline void opal_atomic_store_ ## bits(volatile type *addr, type delta)  \
+{                                                                               \
+     __atomic_store_n (addr, delta, __ATOMIC_RELAXED);                          \
+}
+
+#define OPAL_GCC_MAKE_ATOMIC_LOAD(type, bits)                       \
+static inline type opal_atomic_load_ ## bits(volatile type *addr)   \
+{                                                                   \
+     return (type) __atomic_load_n (addr, __ATOMIC_RELAXED);        \
+}
+
+OPAL_GCC_MAKE_ATOMIC_STORE(int32_t, 32)
+OPAL_GCC_MAKE_ATOMIC_STORE(int64_t, 64)
+OPAL_GCC_MAKE_ATOMIC_STORE(void*, ptr)
+#define OPAL_HAVE_ATOMIC_STORE_32 1
+#define OPAL_HAVE_ATOMIC_STORE_64 1
+#define OPAL_HAVE_ATOMIC_STORE_PTR 1
+
+OPAL_GCC_MAKE_ATOMIC_LOAD(int32_t, 32)
+OPAL_GCC_MAKE_ATOMIC_LOAD(int64_t, 64)
+OPAL_GCC_MAKE_ATOMIC_LOAD(void *, ptr)
+#define OPAL_HAVE_ATOMIC_LOAD_32 1
+#define OPAL_HAVE_ATOMIC_LOAD_64 1
+#define OPAL_HAVE_ATOMIC_LOAD_PTR 1
+
+
+#define opal_atomic_sc_32(addr,val,ret) \
+        ret = true;                     \
+        __atomic_store_n(addr, val, __ATOMIC_RELAXED);
+#define opal_atomic_sc_64 opal_atomic_sc_32
+
+#define OPAL_GCC_MAKE_ATOMIC_LL(type, bits)                                                \
+    static inline void  opal_atomic_ll_ ## bits (volatile type *addr, type *val){          \
+        __atomic_load(addr, val, __ATOMIC_RELAXED);                                        \
+    }
+
+OPAL_GCC_MAKE_ATOMIC_LL(int32_t, 32)
+OPAL_GCC_MAKE_ATOMIC_LL(int64_t, 64)
+#define OPAL_HAVE_ATOMIC_LLSC_32 1
+#define OPAL_HAVE_ATOMIC_LLSC_64 1
 
 #if OPAL_HAVE_GCC_BUILTIN_CSWAP_INT128
 
@@ -274,3 +320,5 @@ OPAL_ATOMIC_DEFINE_OP(size_t, size_t, -, sub)
 #endif
 
 #endif /* ! OPAL_SYS_ARCH_ATOMIC_H */
+
+#endif /* ! OPAL_SYS_ARCH_ATOMIC_LLSC_H */

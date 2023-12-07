@@ -20,6 +20,7 @@
  * Copyright (c) 2018      FUJITSU LIMITED.  All rights reserved.
  * Copyright (c) 2018      Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2022      IBM Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
@@ -96,6 +97,18 @@ static int ompi_request_empty_free(ompi_request_t** request)
     return OMPI_SUCCESS;
 }
 
+static int
+ompi_request_persistent_noop_ready(unsigned long min, unsigned long max, ompi_request_t *request)
+{
+    return OMPI_SUCCESS;
+}
+
+static int
+ompi_request_persistent_noop_arrived(unsigned long min, unsigned long max, int*flag, ompi_request_t *request)
+{
+    *flag = 1;
+    return OMPI_SUCCESS;
+}
 static int ompi_request_persistent_noop_free(ompi_request_t** request)
 {
     OMPI_REQUEST_FINI(*request);
@@ -243,6 +256,8 @@ int ompi_request_persistent_noop_create(ompi_request_t** request)
     req->req_complete = REQUEST_COMPLETED;
     req->req_state = OMPI_REQUEST_INACTIVE;
     req->req_persistent = true;
+    req->req_ready = ompi_request_persistent_noop_ready;
+    req->req_arrived = ompi_request_persistent_noop_arrived;
     req->req_free = ompi_request_persistent_noop_free;
 
     *request = req;

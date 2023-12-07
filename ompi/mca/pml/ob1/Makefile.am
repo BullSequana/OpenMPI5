@@ -14,6 +14,7 @@
 # Copyright (c) 2012      NVIDIA Corporation.  All rights reserved.
 # Copyright (c) 2017      IBM Corporation.  All rights reserved.
 # Copyright (c) 2022      Amazon.com, Inc. or its affiliates.  All Rights reserved.
+# Copyright (c) 2023-2024 BULL S.A.S. All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
@@ -58,6 +59,12 @@ ob1_sources  = \
 	custommatch/pml_ob1_custom_match_fuzzy512-byte.h \
 	custommatch/pml_ob1_custom_match_fuzzy512-short.h \
 	custommatch/pml_ob1_custom_match_fuzzy512-word.h
+
+if OMPI_pml_ob1_matching_stats
+ob1_sources += \
+	pml_ob1_stats.c \
+	pml_ob1_stats.h
+endif
 
 if MCA_BUILD_ompi_pml_ob1_DSO
 component_noinst =

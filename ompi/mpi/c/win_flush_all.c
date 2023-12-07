@@ -12,6 +12,7 @@
  * Copyright (c) 2006      Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -53,6 +54,12 @@ int MPI_Win_flush_all(MPI_Win win)
         OMPI_ERRHANDLER_CHECK(ret, win, ret, FUNC_NAME);
     }
 
+#if OMPI_MPI_NOTIFICATIONS
+    if (NULL != win->w_notify){
+        ret = win->w_notify->w_osc_module->osc_flush_all(win->w_notify);
+        OMPI_ERRHANDLER_CHECK(ret, win->w_notify, ret, FUNC_NAME);
+    }
+#endif
     /* create window and return */
     ret = win->w_osc_module->osc_flush_all(win);
     OMPI_ERRHANDLER_RETURN(ret, win, ret, FUNC_NAME);

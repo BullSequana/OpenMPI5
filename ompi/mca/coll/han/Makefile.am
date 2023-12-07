@@ -3,7 +3,7 @@
 #                         of Tennessee Research Foundation.  All rights
 #                         reserved.
 # Copyright (c) 2022      Amazon.com, Inc. or its affiliates.  All Rights reserved.
-# Copyright (c) 2022      BULL S.A.S. All rights reserved.
+# Copyright (c) 2020-2023 BULL S.A.S. All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
@@ -24,6 +24,8 @@ coll_han_scatter.c \
 coll_han_gather.c \
 coll_han_allreduce.c \
 coll_han_allgather.c \
+coll_han_alltoall.c \
+coll_han_alltoallv.c \
 coll_han_component.c \
 coll_han_module.c \
 coll_han_trigger.c \

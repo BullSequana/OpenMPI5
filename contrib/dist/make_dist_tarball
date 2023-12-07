@@ -23,11 +23,11 @@
 # Version of auto tools that we want
 #
 
-M4_TARGET_VERSION=1.4.19
-AM_TARGET_VERSION=1.16.5
-AC_TARGET_VERSION=2.71
+M4_TARGET_VERSION=1.4.18
+AM_TARGET_VERSION=1.16.1
+AC_TARGET_VERSION=2.69
 LT_TARGET_VERSION=2.4.6
-FLEX_TARGET_VERSION=2.6.4
+FLEX_TARGET_VERSION=2.6.1
 
 #
 # When running "make distcheck", use these parallelization flags.  Can

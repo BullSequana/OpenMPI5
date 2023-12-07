@@ -19,6 +19,7 @@ dnl Copyright (c) 2009      Oak Ridge National Labs.  All rights reserved.
 dnl Copyright (c) 2013      Intel, Inc.  All rights reserved.
 dnl Copyright (c) 2015-2018 Research Organization for Information Science
 dnl                         and Technology (RIST). All rights reserved.
+dnl Copyright (c) 2020-2023 BULL S.A.S. All rights reserved.
 dnl
 dnl $COPYRIGHT$
 dnl
@@ -244,5 +245,75 @@ else
 fi
 AM_CONDITIONAL(OMPI_OMPIO_SUPPORT, test "$ompi_want_ompio" = "1")
 
+#
+# MPI notifications
+#
+
+AC_MSG_CHECKING([if want MPI notifications])
+AC_ARG_ENABLE(mpi-notifications,
+    AC_HELP_STRING([--enable-mpi-notifications],
+                   [enable MPI notifications (experimental) (default: enabled)]))
+if test "$enable_mpi_notifications" != "no"; then
+    AC_MSG_RESULT([yes])
+    OMPI_WANT_MPI_NOTIFS_SUPPORT=1
+else
+    enable_mpi_notifications=no
+    AC_MSG_RESULT([no])
+    OMPI_WANT_MPI_NOTIFS_SUPPORT=0
+fi
+
+AC_DEFINE_UNQUOTED([OMPI_MPI_NOTIFICATIONS],
+                   [$OMPI_WANT_MPI_NOTIFS_SUPPORT],
+                   [if the MPI notifications support should be enabled])
+AM_CONDITIONAL(OMPI_MPI_NOTIFICATIONS, test "$OMPI_WANT_MPI_NOTIFS_SUPPORT" = "1")
+
+OPAL_SUMMARY_ADD([[Miscellaneous]],[[Notifications support]],[opal_notifs], [$enable_mpi_notifications])
+
+#
+# PML OB1 MATCHING STATS
+#
+
+AC_MSG_CHECKING([if want PML/OB1 monitoring stats])
+AC_ARG_ENABLE(ob1-monitoring-stats,
+    AC_HELP_STRING([--enable-ob1-monitoring-stats],
+                   [enable PML/OB1 monitoring stats (experimental) (default: disabled)]))
+if test "$enable_ob1_monitoring_stats" = "yes"; then
+    AC_MSG_RESULT([yes])
+    OMPI_WANT_PML_OB1_MONITORING_STATS=1
+else
+    AC_MSG_RESULT([no])
+    OMPI_WANT_PML_OB1_MONITORING_STATS=0
+fi
+
+AC_DEFINE_UNQUOTED([OMPI_PML_OB1_MATCHING_STATS],
+                   [$OMPI_WANT_PML_OB1_MONITORING_STATS],
+                   [if the PML/OB1 monitoring stats should be enabled])
+AM_CONDITIONAL(OMPI_pml_ob1_matching_stats, test "$OMPI_WANT_PML_OB1_MONITORING_STATS" = "1")
+
+#
+# MPI partitioned collective
+#
+
+AC_MSG_CHECKING([if want MPI partitioned collective])
+AC_ARG_ENABLE(mpi-partitioned-collectives,
+    AC_HELP_STRING([--enable-mpi-partitioned-collectives],
+                   [enable MPI partitioned collectives (experimental) (default: enabled)]))
+if test "$enable_mpi_partitioned_collectives" != "no"; then
+    enable_mpi_partitioned_collectives=yes
+    AC_MSG_RESULT([yes])
+    OMPI_WANT_MPI_PARTITIONED_COLL_SUPPORT=1
+else
+    enable_mpi_partitioned_collectives=no
+    AC_MSG_RESULT([no])
+    OMPI_WANT_MPI_PARTITIONED_COLL_SUPPORT=0
+fi
+
+AC_DEFINE_UNQUOTED([OMPI_MPI_PARTITIONED_COLL],
+                   [$OMPI_WANT_MPI_PARTITIONED_COLL_SUPPORT],
+                   [if the MPI partitioned collective operation support should be enabled])
+AM_CONDITIONAL(OMPI_MPI_PARTITIONED_COLL, test "$OMPI_WANT_MPI_PARTITIONED_COLL_SUPPORT" = "1")
+
+OPAL_SUMMARY_ADD([[Miscellaneous]], [[Partitioned collective support]], \
+                 [deadbeef], [$enable_mpi_partitioned_collectives])
 ])dnl
 

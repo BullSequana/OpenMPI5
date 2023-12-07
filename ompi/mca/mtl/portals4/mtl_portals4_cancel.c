@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012      Sandia National Laboratories.  All rights reserved.
+ * Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -45,7 +46,7 @@ ompi_mtl_portals4_cancel(struct mca_mtl_base_module_t* mtl,
                receive completion event... */
             ompi_mtl_portals4_progress();
 
-            if (PTL_INVALID_HANDLE != recvreq->me_h) {
+            if (!PtlHandleIsEqual(PTL_INVALID_HANDLE, recvreq->me_h)) {
                 ret = PtlMEUnlink(recvreq->me_h);
                 if (PTL_OK == ret) {
                     recvreq->super.super.ompi_req->req_status._cancelled = true;

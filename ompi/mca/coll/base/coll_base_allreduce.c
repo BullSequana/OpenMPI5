@@ -17,6 +17,7 @@
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2018      Siberian State University of Telecommunications
  *                         and Information Science. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2022      Cisco Systems, Inc.  All rights reserved.
  * $COPYRIGHT$
  *
@@ -39,6 +40,7 @@
 #include "ompi/mca/coll/base/coll_base_functions.h"
 #include "coll_base_topo.h"
 #include "coll_base_util.h"
+#include "opal/runtime/opal_params.h"
 
 /*
  * ompi_coll_base_allreduce_intra_nonoverlapping
@@ -138,6 +140,7 @@ ompi_coll_base_allreduce_intra_recursivedoubling(const void *sbuf, void *rbuf,
     int ret, line, rank, size, adjsize, remote, distance;
     int newrank, newremote, extra_ranks;
     char *tmpsend = NULL, *tmprecv = NULL, *tmpswap = NULL, *inplacebuf_free = NULL, *inplacebuf;
+    char *tmprecv_free = NULL;
     ptrdiff_t span, gap = 0;
 
     size = ompi_comm_size(comm);
@@ -170,7 +173,17 @@ ompi_coll_base_allreduce_intra_recursivedoubling(const void *sbuf, void *rbuf,
     }
 
     tmpsend = (char*) inplacebuf;
-    tmprecv = (char*) rbuf;
+    if (opal_allreduce_use_device_pointers) {
+        tmprecv_free = (char *) malloc(span);
+        if (NULL == tmprecv_free) {
+            ret = OMPI_ERR_OUT_OF_RESOURCE;
+            line = __LINE__;
+            goto error_hndl;
+        }
+        tmprecv = tmprecv_free - gap;
+    } else {
+        tmprecv = (char*) rbuf;
+    }
 
     /* Determine nearest power of two less than or equal to size */
     adjsize = opal_next_poweroftwo (size);
@@ -263,6 +276,9 @@ ompi_coll_base_allreduce_intra_recursivedoubling(const void *sbuf, void *rbuf,
         if (ret < 0) { line = __LINE__; goto error_hndl; }
     }
 
+    if (opal_allreduce_use_device_pointers) {
+        free(tmprecv_free);
+    }
     if (NULL != inplacebuf_free) free(inplacebuf_free);
     return MPI_SUCCESS;
 
@@ -271,6 +287,7 @@ ompi_coll_base_allreduce_intra_recursivedoubling(const void *sbuf, void *rbuf,
                  __FILE__, line, rank, ret));
     (void)line;  // silence compiler warning
     if (NULL != inplacebuf_free) free(inplacebuf_free);
+    if (NULL != tmprecv_free) free(tmprecv_free);
     return ret;
 }
 
@@ -349,6 +366,8 @@ ompi_coll_base_allreduce_intra_ring(const void *sbuf, void *rbuf, int count,
     int early_segcount, late_segcount, split_rank, max_segcount;
     size_t typelng;
     char *tmpsend = NULL, *tmprecv = NULL, *inbuf[2] = {NULL, NULL};
+    char *true_rbuf = rbuf;
+    char *rbuf_free = NULL;
     ptrdiff_t true_lb, true_extent, lb, extent;
     ptrdiff_t block_offset, max_real_segsize;
     ompi_request_t *reqs[2] = {MPI_REQUEST_NULL, MPI_REQUEST_NULL};
@@ -405,9 +424,26 @@ ompi_coll_base_allreduce_intra_ring(const void *sbuf, void *rbuf, int count,
         if (NULL == inbuf[1]) { ret = -1; line = __LINE__; goto error_hndl; }
     }
 
+    if (opal_allreduce_use_device_pointers && count > 0) {
+        ptrdiff_t span;
+        ptrdiff_t gap;
+        span = opal_datatype_span(&dtype->super, count, &gap);
+
+        rbuf_free = (char *) malloc(span);
+        if (NULL == rbuf_free) {
+            ret = OMPI_ERR_OUT_OF_RESOURCE;
+            line = __LINE__;
+            goto error_hndl;
+        }
+        rbuf = rbuf_free - gap;
+    }
+
     /* Handle MPI_IN_PLACE */
     if (MPI_IN_PLACE != sbuf) {
         ret = ompi_datatype_copy_content_same_ddt(dtype, count, (char*)rbuf, (char*)sbuf);
+        if (ret < 0) { line = __LINE__; goto error_hndl; }
+    } else if (opal_allreduce_use_device_pointers) {
+        ret = ompi_datatype_copy_content_same_ddt(dtype, count, (char*)rbuf, true_rbuf);
         if (ret < 0) { line = __LINE__; goto error_hndl; }
     }
 
@@ -521,10 +557,16 @@ ompi_coll_base_allreduce_intra_ring(const void *sbuf, void *rbuf, int count,
 
     }
 
+    ret = MPI_SUCCESS;
+    if (opal_allreduce_use_device_pointers) {
+        ret = ompi_datatype_copy_content_same_ddt(dtype, count, true_rbuf, (char*)rbuf);
+        free(rbuf_free);
+    }
+
     if (NULL != inbuf[0]) free(inbuf[0]);
     if (NULL != inbuf[1]) free(inbuf[1]);
 
-    return MPI_SUCCESS;
+    return ret;
 
  error_hndl:
     OPAL_OUTPUT((ompi_coll_base_framework.framework_output, "%s:%4d\tRank %d Error occurred %d\n",
@@ -533,6 +575,7 @@ ompi_coll_base_allreduce_intra_ring(const void *sbuf, void *rbuf, int count,
     (void)line;  // silence compiler warning
     if (NULL != inbuf[0]) free(inbuf[0]);
     if (NULL != inbuf[1]) free(inbuf[1]);
+    if (NULL != rbuf_free) free(rbuf_free);
     return ret;
 }
 
@@ -628,6 +671,8 @@ ompi_coll_base_allreduce_intra_ring_segmented(const void *sbuf, void *rbuf, int 
     int segcount, max_segcount, num_phases, phase, block_count, inbi;
     size_t typelng;
     char *tmpsend = NULL, *tmprecv = NULL, *inbuf[2] = {NULL, NULL};
+    char *true_rbuf = rbuf;
+    char *rbuf_free = NULL;
     ptrdiff_t block_offset, max_real_segsize;
     ompi_request_t *reqs[2] = {MPI_REQUEST_NULL, MPI_REQUEST_NULL};
     ptrdiff_t lb, extent, gap;
@@ -693,9 +738,25 @@ ompi_coll_base_allreduce_intra_ring_segmented(const void *sbuf, void *rbuf, int 
         if (NULL == inbuf[1]) { ret = -1; line = __LINE__; goto error_hndl; }
     }
 
+    if (opal_allreduce_use_device_pointers && count > 0) {
+        ptrdiff_t span;
+        span = opal_datatype_span(&dtype->super, count, &gap);
+
+        rbuf_free = (char *) malloc(span);
+        if (NULL == rbuf_free) {
+            ret = OMPI_ERR_OUT_OF_RESOURCE;
+            line = __LINE__;
+            goto error_hndl;
+        }
+        rbuf = rbuf_free - gap;
+    }
+
     /* Handle MPI_IN_PLACE */
     if (MPI_IN_PLACE != sbuf) {
         ret = ompi_datatype_copy_content_same_ddt(dtype, count, (char*)rbuf, (char*)sbuf);
+        if (ret < 0) { line = __LINE__; goto error_hndl; }
+    } else if (opal_allreduce_use_device_pointers) {
+        ret = ompi_datatype_copy_content_same_ddt(dtype, count, (char*)rbuf, true_rbuf);
         if (ret < 0) { line = __LINE__; goto error_hndl; }
     }
 
@@ -841,6 +902,14 @@ ompi_coll_base_allreduce_intra_ring_segmented(const void *sbuf, void *rbuf, int 
 
     }
 
+    if (opal_allreduce_use_device_pointers) {
+        ret = ompi_datatype_copy_content_same_ddt(dtype, count, true_rbuf, (char*)rbuf);
+        if (MPI_SUCCESS != ret) {
+            goto error_hndl;
+        }
+        free(rbuf_free);
+    }
+
     if (NULL != inbuf[0]) free(inbuf[0]);
     if (NULL != inbuf[1]) free(inbuf[1]);
 
@@ -853,6 +922,7 @@ ompi_coll_base_allreduce_intra_ring_segmented(const void *sbuf, void *rbuf, int 
     (void)line;  // silence compiler warning
     if (NULL != inbuf[0]) free(inbuf[0]);
     if (NULL != inbuf[1]) free(inbuf[1]);
+    if (NULL != rbuf_free) free(rbuf_free);
     return ret;
 }
 
@@ -988,7 +1058,7 @@ int ompi_coll_base_allreduce_intra_redscat_allgather(
     }
     int nprocs_pof2 = 1 << nsteps;                              /* flp2(comm_size) */
 
-    if (count < nprocs_pof2 || !ompi_op_is_commute(op)) {
+    if (nprocs_pof2 < 0 || count < nprocs_pof2 || !ompi_op_is_commute(op)) {
         OPAL_OUTPUT((ompi_coll_base_framework.framework_output,
                      "coll:base:allreduce_intra_redscat_allgather: rank %d/%d "
                      "count %d switching to basic linear allreduce",
@@ -1009,9 +1079,24 @@ int ompi_coll_base_allreduce_intra_redscat_allgather(
         return OMPI_ERR_OUT_OF_RESOURCE;
     tmp_buf = tmp_buf_raw - gap;
 
+    char *true_rbuf = rbuf;
+    char *rbuf_free = NULL;
+    if (opal_allreduce_use_device_pointers) {
+        rbuf_free = (char *) malloc(dsize);
+        if (NULL == rbuf_free) {
+            err = OMPI_ERR_OUT_OF_RESOURCE;
+            goto cleanup_and_return;
+        }
+        rbuf = rbuf_free - gap;
+    }
+
     if (sbuf != MPI_IN_PLACE) {
         err = ompi_datatype_copy_content_same_ddt(dtype, count, (char *)rbuf,
                                                   (char *)sbuf);
+        if (MPI_SUCCESS != err) { goto cleanup_and_return; }
+    } else if (opal_allreduce_use_device_pointers) {
+        err = ompi_datatype_copy_content_same_ddt(dtype, count, (char *)rbuf,
+                                                  true_rbuf);
         if (MPI_SUCCESS != err) { goto cleanup_and_return; }
     }
 
@@ -1231,7 +1316,13 @@ int ompi_coll_base_allreduce_intra_redscat_allgather(
         }
     }
 
+    if (opal_allreduce_use_device_pointers) {
+        err = ompi_datatype_copy_content_same_ddt(dtype, count, true_rbuf, (char*)rbuf);
+    }
+
   cleanup_and_return:
+    if (NULL != rbuf_free)
+        free(rbuf_free);
     if (NULL != tmp_buf_raw)
         free(tmp_buf_raw);
     if (NULL != rindex)

@@ -3,6 +3,7 @@
  *                         All rights reserved.
  * Copyright (c) 2019      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
+ * Copyright (c) 2022      BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -90,7 +91,7 @@ int mca_scoll_basic_barrier(struct oshmem_group_t *group, long *pSync, int alg)
 }
 
 /*
- This algorithm is quite simple and straightforward. But because of it�s obvious simplicity and
+ This algorithm is quite simple and straightforward. But because of its obvious simplicity and
  the naive prove for correctness it is implemented quite often. One node asks peers if they are
  achieve barrier state. When all processors are ready it signals to go ahead.
  Outlay:

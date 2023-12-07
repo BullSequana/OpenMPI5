@@ -15,6 +15,7 @@
  * Copyright (c) 2015-2016 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2017      IBM Corporation. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -37,6 +38,7 @@
 
 /* Todo: gather_intra_generic, gather_intra_binary, gather_intra_chain,
  * gather_intra_pipeline, segmentation? */
+
 int
 ompi_coll_base_gather_intra_binomial(const void *sbuf, int scount,
                                       struct ompi_datatype_t *sdtype,
@@ -104,8 +106,11 @@ ompi_coll_base_gather_intra_binomial(const void *sbuf, int scount,
         /* other non-leaf nodes, allocate temp buffer for data received from
          * children, the most we need is half of the total data elements due
          * to the property of binimoal tree */
+        /* How many messages are aggregated on this rank ? */
+        unsigned int aggregated_msg_nb = binomial_aggregated_msg_nb(vrank, size);
         ompi_datatype_type_extent(sdtype, &sextent);
-        ssize = opal_datatype_span(&sdtype->super, (int64_t)scount * size, &sgap);
+        ssize = opal_datatype_span(&sdtype->super, (int64_t)scount * aggregated_msg_nb, &sgap);
+        /* We allocate only exactly what we need */
         tempbuf = (char *) malloc(ssize);
         if (NULL == tempbuf) {
             err= OMPI_ERR_OUT_OF_RESOURCE; line = __LINE__; goto err_hndl;
@@ -145,7 +150,7 @@ ompi_coll_base_gather_intra_binomial(const void *sbuf, int scount,
                          "ompi_coll_base_gather_intra_binomial rank %d recv %d mycount = %d",
                          rank, bmtree->tree_next[i], mycount));
 
-            err = MCA_PML_CALL(recv(ptmp + total_recv*rextent, (ptrdiff_t)rcount * size - total_recv, rdtype,
+            err = MCA_PML_CALL(recv(ptmp + total_recv*rextent, (size_t)mycount, rdtype,
                                     bmtree->tree_next[i], MCA_COLL_BASE_TAG_GATHER,
                                     comm, &status));
             if (MPI_SUCCESS != err) { line = __LINE__; goto err_hndl; }
@@ -179,12 +184,10 @@ ompi_coll_base_gather_intra_binomial(const void *sbuf, int scount,
                                                       (char *) rbuf, ptmp + rextent * (ptrdiff_t)rcount * (ptrdiff_t)(size-root));
             if (MPI_SUCCESS != err) { line = __LINE__; goto err_hndl; }
 
-            free(tempbuf);
         }
-    } else if (!(vrank % 2)) {
-        /* other non-leaf nodes */
-        free(tempbuf);
     }
+    if (NULL != tempbuf)
+        free(tempbuf);
     return MPI_SUCCESS;
 
  err_hndl:
@@ -276,7 +279,6 @@ ompi_coll_base_gather_intra_linear_sync(const void *sbuf, int scount,
         COLL_BASE_COMPUTED_SEGCOUNT( (size_t)first_segment_size, typelng,
                                       first_segment_count );
 
-        ptmp = (char *) rbuf;
         for (i = 0; i < size; ++i) {
             if (i == rank) {
                 /* skip myself */

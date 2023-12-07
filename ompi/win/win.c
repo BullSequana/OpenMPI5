@@ -19,6 +19,7 @@
  * Copyright (c) 2016-2017 IBM Corporation. All rights reserved.
  * Copyright (c) 2018-2019 Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -379,7 +380,19 @@ ompi_win_create_dynamic(opal_info_t *info, ompi_communicator_t *comm, ompi_win_t
 int
 ompi_win_free(ompi_win_t *win)
 {
-    int ret = win->w_osc_module->osc_free(win);
+    int ret;
+
+#if OMPI_MPI_NOTIFICATIONS
+    if (NULL != win->w_notify){
+        ret = ompi_win_free(win->w_notify);
+        if (OMPI_SUCCESS == ret) {
+            win->w_notify = MPI_WIN_NULL;
+        }
+        OMPI_ERRHANDLER_CHECK(ret, win->w_notify, ret, "ompi_win_free_notify");
+    }
+#endif
+
+    ret = win->w_osc_module->osc_free(win);
 
     if (-1 != win->w_f_to_c_index) {
         opal_pointer_array_set_item(&ompi_mpi_windows,
@@ -448,6 +461,11 @@ ompi_win_construct(ompi_win_t *win)
 
     win->w_flags = 0;
     win->w_osc_module = NULL;
+
+#if OMPI_MPI_NOTIFICATIONS
+    win->w_notify = NULL;
+    win->is_notif_window = 0;
+#endif
 }
 
 

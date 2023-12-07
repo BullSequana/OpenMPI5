@@ -3,7 +3,7 @@
  * Copyright (c) 2013-2015 Sandia National Laboratories. All rights reserved.
  * Copyright (c) 2015-2018 Los Alamos National Security, LLC. All rights
  *                         reserved.
- * Copyright (c) 2015      Bull SAS.  All rights reserved.
+ * Copyright (c) 2015-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2017      IBM Corporation.  All rights reserved.
@@ -30,9 +30,14 @@
 #include "ompi/mca/coll/coll.h"
 #include "ompi/op/op.h"
 #include "ompi/request/request.h"
+#include "ompi/datatype/ompi_datatype.h"
 
 #include "ompi/mca/mtl/portals4/mtl_portals4.h"
 #include "ompi/mca/mtl/portals4/mtl_portals4_endpoint.h"
+#include "opal/include/opal/sys/atomic.h"
+#include "opal/mca/btl/portals4/btl_portals4.h"
+#include "ompi/mca/bml/base/base.h"
+#include "ompi/mca/bml/bml.h"
 
 #include <portals4.h>
 
@@ -68,9 +73,15 @@ struct mca_coll_portals4_component_t {
 
     ptl_ni_limits_t ni_limits;
     ptl_size_t portals_max_msg_size;
+    uint32_t me_linked;
+    uint32_t me_to_link;
+    unsigned char is_mtl_active;
+    unsigned long eq_size;
 
     int use_binomial_gather_algorithm;
 
+    /* Multithreading support */
+    char thread_multiple_enabled;
 };
 typedef struct mca_coll_portals4_component_t mca_coll_portals4_component_t;
 OMPI_DECLSPEC extern mca_coll_portals4_component_t mca_coll_portals4_component;
@@ -183,7 +194,7 @@ do {                                                                            
 int ompi_coll_portals4_barrier_intra(struct ompi_communicator_t *comm,
         mca_coll_base_module_t *module);
 int ompi_coll_portals4_ibarrier_intra(struct ompi_communicator_t *comm,
-        ompi_request_t ** request,
+        ompi_request_t ** ompi_req,
         mca_coll_base_module_t *module);
 int ompi_coll_portals4_ibarrier_intra_fini(struct ompi_coll_portals4_request_t *request);
 
@@ -231,7 +242,7 @@ int ompi_coll_portals4_igather_intra(const void *sbuf, int scount, struct ompi_d
                                      void *rbuf, int rcount, struct ompi_datatype_t *rdtype,
                                      int root,
                                      struct ompi_communicator_t *comm,
-                                     ompi_request_t **request,
+                                     ompi_request_t **ompi_request,
                                      mca_coll_base_module_t *module);
 int ompi_coll_portals4_igather_intra_fini(struct ompi_coll_portals4_request_t *request);
 
@@ -248,13 +259,44 @@ int ompi_coll_portals4_iscatter_intra(const void *sbuf, int scount, struct ompi_
                                       mca_coll_base_module_t *module);
 int ompi_coll_portals4_iscatter_intra_fini(struct ompi_coll_portals4_request_t *request);
 
-
 static inline ptl_process_t
 ompi_coll_portals4_get_peer(struct ompi_communicator_t *comm, int rank)
 {
-    return ompi_mtl_portals4_get_peer(comm, rank);
-}
+    if (mca_coll_portals4_component.is_mtl_active) {
+        /* Tasks MTL to retrieve ptl_process_t */
+        return ompi_mtl_portals4_get_peer(comm, rank);
+    } else {
+        /* Tasks BTL to retrieve ptl_process_t */
+        ompi_proc_t * proc = ompi_comm_peer_lookup(comm, rank);
+        if (NULL == proc) {
+            /* This should never happen. No recovery possible */
+            opal_output_verbose(1, ompi_coll_base_framework.framework_output,
+                                "%s:%d: Unvalid rank %d for communicator %d\n",
+                                __FILE__, __LINE__, rank, comm->c_contextid);
+            abort();
+        }
+        /* Shortcut for self */
+        if (proc == ompi_proc_local()) {
+            return mca_coll_portals4_component.id;
+        }
+        mca_bml_base_endpoint_t * endpoint = mca_bml_base_get_endpoint(proc);
+        mca_bml_base_btl_t * bml_btl;
+        int btl = 0;
+        do {
+            bml_btl = mca_bml_base_btl_array_get_index(&endpoint->btl_send,btl++);
+        } while (NULL != bml_btl &&
+                 strcmp(bml_btl->btl->btl_component->btl_version.mca_component_name, "portals4"));
+        if (NULL == bml_btl) {
+            opal_output_verbose(1, ompi_coll_base_framework.framework_output,
+                                "%s:%d: No BTL/Portals4",
+                                __FILE__, __LINE__);
+            ptl_process_t tmp; tmp.phys.nid = 0; tmp.phys.pid = 0; tmp.rank = 0;
+            return tmp;
+        }
 
+        return bml_btl->btl_endpoint->ptl_proc;
+    }
+}
 
 static inline bool
 is_reduce_optimizable(struct ompi_datatype_t *dtype, size_t length, struct ompi_op_t *op,

@@ -5,6 +5,7 @@
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2018      Cisco Systems, Inc.  All rights reserved
+ * Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2022      Amazon.com, Inc. or its affiliates.
  *                         All Rights reserved.
  * $COPYRIGHT$
@@ -47,6 +48,7 @@ static void mca_coll_hcoll_module_clear(mca_coll_hcoll_module_t *hcoll_module)
     hcoll_module->previous_allgatherv = NULL;
     hcoll_module->previous_gather     = NULL;
     hcoll_module->previous_gatherv    = NULL;
+    hcoll_module->previous_gatherw    = NULL;
     hcoll_module->previous_scatterv   = NULL;
     hcoll_module->previous_alltoall   = NULL;
     hcoll_module->previous_alltoallv  = NULL;
@@ -72,6 +74,7 @@ static void mca_coll_hcoll_module_clear(mca_coll_hcoll_module_t *hcoll_module)
     hcoll_module->previous_allgatherv_module = NULL;
     hcoll_module->previous_gather_module     = NULL;
     hcoll_module->previous_gatherv_module    = NULL;
+    hcoll_module->previous_gatherw_module    = NULL;
     hcoll_module->previous_scatterv_module    = NULL;
     hcoll_module->previous_alltoall_module   = NULL;
     hcoll_module->previous_alltoallv_module  = NULL;
@@ -127,6 +130,7 @@ static void mca_coll_hcoll_module_destruct(mca_coll_hcoll_module_t *hcoll_module
         OBJ_RELEASE_IF_NOT_NULL(hcoll_module->previous_allgather_module);
         OBJ_RELEASE_IF_NOT_NULL(hcoll_module->previous_allgatherv_module);
         OBJ_RELEASE_IF_NOT_NULL(hcoll_module->previous_gatherv_module);
+        OBJ_RELEASE_IF_NOT_NULL(hcoll_module->previous_gatherw_module);
         OBJ_RELEASE_IF_NOT_NULL(hcoll_module->previous_scatterv_module);
         OBJ_RELEASE_IF_NOT_NULL(hcoll_module->previous_alltoall_module);
         OBJ_RELEASE_IF_NOT_NULL(hcoll_module->previous_alltoallv_module);
@@ -146,6 +150,7 @@ static void mca_coll_hcoll_module_destruct(mca_coll_hcoll_module_t *hcoll_module
         OBJ_RELEASE(hcoll_module->previous_allgatherv_module);
         OBJ_RELEASE(hcoll_module->previous_gather_module);
         OBJ_RELEASE(hcoll_module->previous_gatherv_module);
+        OBJ_RELEASE(hcoll_module->previous_gatherw_module);
         OBJ_RELEASE(hcoll_module->previous_alltoallw_module);
         OBJ_RELEASE(hcoll_module->previous_reduce_scatter_module);
         OBJ_RELEASE(hcoll_module->previous_reduce_module);
@@ -217,15 +222,20 @@ static int mca_coll_hcoll_save_coll_handlers(mca_coll_hcoll_module_t *hcoll_modu
 */
 static int hcoll_comm_attr_del_fn(MPI_Comm comm, int keyval, void *attr_val, void *extra)
 {
-
     mca_coll_hcoll_module_t *hcoll_module;
     hcoll_module = (mca_coll_hcoll_module_t*) attr_val;
 
+    if (!mca_coll_hcoll_component.is_world_freed) {
+        if (hcoll_module->comm == &ompi_mpi_comm_world.comm) {
+            mca_coll_hcoll_component.is_world_freed = true;
+        }
+
 #ifdef HAVE_HCOLL_CONTEXT_FREE
-    hcoll_context_free(hcoll_module->hcoll_context, (rte_grp_handle_t)comm);
+        hcoll_context_free(hcoll_module->hcoll_context, (rte_grp_handle_t)comm);
 #else
-    hcoll_group_destroy_notify(hcoll_module->hcoll_context);
+        hcoll_group_destroy_notify(hcoll_module->hcoll_context);
 #endif
+    }
     return OMPI_SUCCESS;
 
 }

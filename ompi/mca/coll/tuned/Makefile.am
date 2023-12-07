@@ -13,6 +13,7 @@
 # Copyright (c) 2017      IBM Corporation.  All rights reserved.
 # Copyright (c) 2018      Research Organization for Information Science
 #                         and Technology (RIST).  All rights reserved.
+# Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
@@ -20,14 +21,12 @@
 # $HEADER$
 #
 
+dist_ompidata_DATA = help-mpi-coll-tuned.txt
+
 sources = \
         coll_tuned.h \
-        coll_tuned_dynamic_file.h \
-        coll_tuned_dynamic_rules.h \
         coll_tuned_decision_fixed.c \
         coll_tuned_decision_dynamic.c \
-        coll_tuned_dynamic_file.c \
-        coll_tuned_dynamic_rules.c \
         coll_tuned_component.c \
         coll_tuned_module.c \
         coll_tuned_allgather_decision.c \
@@ -43,7 +42,10 @@ sources = \
         coll_tuned_scatter_decision.c \
         coll_tuned_reduce_scatter_block_decision.c \
         coll_tuned_exscan_decision.c \
-        coll_tuned_scan_decision.c
+        coll_tuned_scan_decision.c \
+        coll_tuned_alltoallw_decision.c \
+        coll_tuned_neighbor_alltoallv_decision.c \
+        coll_tuned_neighbor_alltoallw_decision.c
 
 # Make the output library in this directory, and name it either
 # mca_<type>_<name>.la (for DSO builds) or libmca_<type>_<name>.la

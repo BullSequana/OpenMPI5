@@ -17,6 +17,7 @@
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2015-2019 Intel, Inc.  All rights reserved.
  * Copyright (c) 2018      Amazon.com, Inc. or its affiliates.  All Rights reserved.
+ * Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -208,11 +209,13 @@ mca_coll_sm_comm_query(struct ompi_communicator_t *comm, int *priority)
     sm_module->super.coll_exscan     = NULL;
     sm_module->super.coll_gather     = NULL;
     sm_module->super.coll_gatherv    = NULL;
+    sm_module->super.coll_gatherw    = NULL;
     sm_module->super.coll_reduce     = mca_coll_sm_reduce_intra;
     sm_module->super.coll_reduce_scatter = NULL;
     sm_module->super.coll_scan       = NULL;
     sm_module->super.coll_scatter    = NULL;
     sm_module->super.coll_scatterv   = NULL;
+    sm_module->super.coll_scatterw   = NULL;
 
     opal_output_verbose(10, ompi_coll_base_framework.framework_output,
                         "coll:sm:comm_query (%s/%s): pick me! pick me!",

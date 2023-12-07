@@ -10,6 +10,7 @@
 # Copyright (c) 2004-2005 The Regents of the University of California.
 #                         All rights reserved.
 # Copyright (c) 2008-2020 Cisco Systems, Inc.  All rights reserved.
+# Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
@@ -30,11 +31,27 @@ EXTRA_DIST = $(opal_config_files)
 
 install-data-local:
 	$(MKDIR_P) $(DESTDIR)$(sysconfdir)
+	$(MKDIR_P) $(DESTDIR)$(sysconfdir)/profile/
 	@ p="$(opal_config_files)"; \
         if test "$(opal_file_from_platform)" = "yes"; then \
 	    if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
 	    echo " $(INSTALL_DATA) $$d$$p $(DESTDIR)$(sysconfdir)/openmpi-mca-params.conf"; \
 	    $(INSTALL_DATA) $$d$$p $(DESTDIR)$(sysconfdir)/openmpi-mca-params.conf; \
+        profile_dir="`dirname  $$d$$p`";\
+        srcpath="`readlink -f $(abs_top_srcdir)`";\
+        built_profile_dir=`echo $$profile_dir | sed "s|$$srcpath|$(abs_top_builddir)|g"`;\
+        profile_files="`find $$profile_dir/profile/ | grep -v "\.in$$"`" ;\
+        for file in $$profile_files ; do \
+            echo $(INSTALL_DATA) $$file $(DESTDIR)$(sysconfdir)/profile/ ;\
+            $(INSTALL_DATA) $$file $(DESTDIR)$(sysconfdir)/profile/ ;\
+        done;\
+        if test "$$built_profile_dir" != "$$profile_dir" ; then \
+            built_profile_files="`find $$built_profile_dir/profile/`";\
+            for file in $$built_profile_files ; do \
+                echo $(INSTALL_DATA) $$file $(DESTDIR)$(sysconfdir)/profile/ ;\
+                $(INSTALL_DATA) $$file $(DESTDIR)$(sysconfdir)/profile/ ;\
+            done;\
+        fi;\
         else \
             for file in $$p; do \
 	        if test -f $(DESTDIR)$(sysconfdir)/openmpi-mca-params.conf; then \

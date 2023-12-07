@@ -15,6 +15,7 @@
  * Copyright (c) 2011-2018 Los Alamos National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2018      FUJITSU LIMITED.  All rights reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -58,6 +59,7 @@ struct mca_pml_ob1_send_request_t {
     opal_mutex_t req_send_range_lock;
     opal_list_t req_send_ranges;
     mca_pml_ob1_rdma_frag_t *rdma_frag;
+    uint64_t btl_device_id;
     /** The size of this array is set from mca_pml_ob1.max_rdma_per_request */
     mca_pml_ob1_com_btl_t req_rdma[];
 };
@@ -159,6 +161,7 @@ get_request_from_send_pending(mca_pml_ob1_send_pending_t *type)
                                        0); /* convertor_flags */        \
         (sendreq)->req_recv.pval = NULL;                                \
         (sendreq)->ob1_proc = ob1_proc;                                 \
+        (sendreq)->btl_device_id = UINT64_MAX;                          \
     }
 
 #define MCA_PML_OB1_SEND_REQUEST_RESET(sendreq)                         \

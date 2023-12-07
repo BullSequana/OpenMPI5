@@ -1,0 +1,28 @@
+#
+# Copyright (c) 2017-2024 BULL S.A.S. All rights reserved.
+#
+# Additional copyrights may follow
+#
+# $HEADER$
+#
+
+enable_mem_debug=no
+enable_mem_profile=no
+enable_debug=no
+enable_debug_symbols=no
+enable_memchecker=no
+enable_orterun_prefix_by_default=yes
+enable_wrapper_rpath=no
+enable_wrapper_runpath=no
+enable_mpi_cxx=no
+enable_mpi1_compatibility=yes
+enable_mca_no_build=crs,snapc,pml-crcpw,pml-v,vprotocol,crcp,btl-usnic,btl-uct,btl-openib
+with_verbs=no
+enable_io_romio=yes
+if [[ "$(/usr/bin/uname -p)" == "x86_64" ]]
+then #x86
+   with_io_romio_flags="--with-file_system=ufs+nfs+lustre"
+else #ARM lustre is not yet available on ARM
+   with_io_romio_flags="--with-file_system=ufs+nfs"
+fi
+

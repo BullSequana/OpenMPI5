@@ -22,6 +22,7 @@
  * Copyright (c) 2022      Advanced Micro Devices, Inc. All rights reserved.
  * Copyright (c) 2022      Computer Architecture and VLSI Systems (CARV)
  *                         Laboratory, ICS Forth. All rights reserved.
+ * Copyright (c) 2023-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -62,6 +63,31 @@ OPAL_DECLSPEC extern bool opal_built_with_rocm_support;
  *  * Whether we want to enable CUDA GPU buffer send and receive support.
  *   */
 OPAL_DECLSPEC extern bool opal_cuda_support;
+
+/**
+ * Whether we want to delegate device buffer to PML
+ */
+OPAL_DECLSPEC extern bool opal_copies_fallback_on_pml;
+
+/**
+ * Whether device pointers are used in reduce type collectives
+ * Such buffers cannot be read by ompi_op_reduce. To solve this issue,
+ * all user buffers (in/out) are copied into host buffers.
+ * Copy, send and recv operations are supposed to be able
+ * to handle any type of buffers, at least with an external PML fallback.
+ * Some collective operations (such as reduce_scatter or scatterv)
+ * already did these copies. In such cases nothing more is done.
+ */
+
+OPAL_DECLSPEC extern bool opal_reduce_use_device_pointers;
+OPAL_DECLSPEC extern bool opal_ireduce_use_device_pointers;
+OPAL_DECLSPEC extern bool opal_allreduce_use_device_pointers;
+OPAL_DECLSPEC extern bool opal_iallreduce_use_device_pointers;
+OPAL_DECLSPEC extern bool opal_scan_use_device_pointers;
+OPAL_DECLSPEC extern bool opal_reduce_scatter_use_device_pointers;
+OPAL_DECLSPEC extern bool opal_ireduce_scatter_use_device_pointers;
+OPAL_DECLSPEC extern bool opal_ireduce_scatter_block_use_device_pointers;
+OPAL_DECLSPEC extern bool opal_iallgatherv_use_device_pointers;
 
 /**
  * Whether cuda runtime support is initialized or not.
@@ -105,6 +131,10 @@ OPAL_DECLSPEC extern bool opal_abort_print_stack;
  */
 OPAL_DECLSPEC extern int opal_abort_delay;
 
+
+#if OPAL_ENABLE_FT_CR == 1
+extern bool opal_base_distill_checkpoint_ready;
+#endif
 
 /**
  * Register OPAL MCA parameters from the core

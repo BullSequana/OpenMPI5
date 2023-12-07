@@ -14,6 +14,7 @@
  *                         reserved.
  * Copyright (c) 2014-2016 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -91,7 +92,7 @@ int ompi_coll_base_allgather_intra_bruck(const void *sbuf, int scount,
                                           struct ompi_communicator_t *comm,
                                           mca_coll_base_module_t *module)
 {
-    int line = -1, rank, size, sendto, recvfrom, distance, blockcount, err = 0;
+    int line = -1, rank, size, sendto, recvfrom, distance, err = 0;
     ptrdiff_t rlb, rext;
     char *tmpsend = NULL, *tmprecv = NULL;
 
@@ -131,10 +132,9 @@ int ompi_coll_base_allgather_intra_bruck(const void *sbuf, int scount,
        - blockcount doubles until last step when only the remaining data is
        exchanged.
     */
-    blockcount = 1;
     tmpsend = (char*) rbuf;
     for (distance = 1; distance < size; distance<<=1) {
-
+        int blockcount;
         recvfrom = (rank + distance) % size;
         sendto = (rank - distance + size) % size;
 

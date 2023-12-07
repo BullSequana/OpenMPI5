@@ -6,6 +6,7 @@
  * Copyright (c) 2015-2018 Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
  * Copyright (c) 2019      Mellanox Technologies. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -25,7 +26,7 @@
 #include "opal/util/output.h"
 
 /* also need the dynamic rule structures */
-#include "coll_tuned_dynamic_rules.h"
+#include "ompi/mca/coll/base/coll_base_dynamic_rules.h"
 
 BEGIN_C_DECLS
 
@@ -34,6 +35,7 @@ extern int   ompi_coll_tuned_stream;
 extern int   ompi_coll_tuned_priority;
 extern bool  ompi_coll_tuned_use_dynamic_rules;
 extern char* ompi_coll_tuned_dynamic_rules_filename;
+extern int   ompi_coll_tuned_dynamic_rules_fileformat;
 extern int   ompi_coll_tuned_init_tree_fanout;
 extern int   ompi_coll_tuned_init_chain_fanout;
 extern int   ompi_coll_tuned_init_max_requests;
@@ -46,6 +48,7 @@ extern int   ompi_coll_tuned_scatter_intermediate_msg;
 extern int   ompi_coll_tuned_scatter_large_msg;
 extern int   ompi_coll_tuned_scatter_min_procs;
 extern int   ompi_coll_tuned_scatter_blocking_send_ratio;
+extern bool  ompi_coll_tuned_heterogenous_ddt_support;
 
 /* forced algorithm choices */
 /* this structure is for storing the indexes to the forced algorithm mca params... */
@@ -69,6 +72,7 @@ struct coll_tuned_force_algorithm_params_t {
     int  tree_fanout;    /* tree fanout/in to use */
     int  chain_fanout;   /* K-chain fanout/in to use */
     int  max_requests;   /* Maximum number of outstanding send or recv requests */
+    bool user_defined;   /* is algorithm set by user */
 };
 typedef struct coll_tuned_force_algorithm_params_t coll_tuned_force_algorithm_params_t;
 
@@ -128,6 +132,12 @@ int ompi_coll_tuned_alltoallv_intra_dec_dynamic(ALLTOALLV_ARGS);
 int ompi_coll_tuned_alltoallv_intra_do_this(ALLTOALLV_ARGS, int algorithm);
 int ompi_coll_tuned_alltoallv_intra_check_forced_init(coll_tuned_force_algorithm_mca_param_indices_t *mca_param_indices);
 
+/* AlltoAllW */
+int ompi_coll_tuned_alltoallw_intra_dec_fixed(ALLTOALLW_ARGS);
+int ompi_coll_tuned_alltoallw_intra_dec_dynamic(ALLTOALLW_ARGS);
+int ompi_coll_tuned_alltoallw_intra_do_this(ALLTOALLW_ARGS, int algorithm);
+int ompi_coll_tuned_alltoallw_intra_check_forced_init(coll_tuned_force_algorithm_mca_param_indices_t *mca_param_indices);
+
 /* Barrier */
 int ompi_coll_tuned_barrier_intra_dec_fixed(BARRIER_ARGS);
 int ompi_coll_tuned_barrier_intra_dec_dynamic(BARRIER_ARGS);
@@ -182,6 +192,20 @@ int ompi_coll_tuned_scan_intra_dec_dynamic(SCAN_ARGS);
 int ompi_coll_tuned_scan_intra_do_this(SCAN_ARGS, int algorithm);
 int ompi_coll_tuned_scan_intra_check_forced_init (coll_tuned_force_algorithm_mca_param_indices_t *mca_param_indices);
 
+/* Neighbor Alltoallv */
+int ompi_coll_tuned_neighbor_alltoallv_intra_dec_fixed(NEIGHBOR_ALLTOALLV_ARGS);
+int ompi_coll_tuned_neighbor_alltoallv_intra_dec_dynamic(NEIGHBOR_ALLTOALLV_ARGS);
+int ompi_coll_tuned_neighbor_alltoallv_intra_do_this(NEIGHBOR_ALLTOALLV_ARGS, int algorithm);
+int ompi_coll_tuned_neighbor_alltoallv_intra_check_forced_init (coll_tuned_force_algorithm_mca_param_indices_t *mca_param_indices);
+
+/* Neighbor Alltoallw */
+int ompi_coll_tuned_neighbor_alltoallw_intra_dec_fixed(NEIGHBOR_ALLTOALLW_ARGS);
+int ompi_coll_tuned_neighbor_alltoallw_intra_dec_dynamic(NEIGHBOR_ALLTOALLW_ARGS);
+int ompi_coll_tuned_neighbor_alltoallw_intra_do_this(NEIGHBOR_ALLTOALLW_ARGS, int algorithm);
+int ompi_coll_tuned_neighbor_alltoallw_intra_check_forced_init (coll_tuned_force_algorithm_mca_param_indices_t *mca_param_indices);
+
+int mca_coll_tuned_ft_event(int state);
+
 struct mca_coll_tuned_component_t {
 	/** Base coll component */
 	mca_coll_base_component_2_4_0_t super;
@@ -194,7 +218,7 @@ struct mca_coll_tuned_component_t {
 	/* MCA parameters first */
 
 	/* cached decision table stuff (moved from MCW module) */
-	ompi_coll_alg_rule_t *all_base_rules;
+	ompi_coll_base_alg_rule_t *all_base_rules;
 };
 /**
  * Convenience typedef
@@ -214,7 +238,7 @@ struct mca_coll_tuned_module_t {
     coll_tuned_force_algorithm_params_t user_forced[COLLCOUNT];
 
     /* the communicator rules for each MPI collective for ONLY my comsize */
-    ompi_coll_com_rule_t *com_rules[COLLCOUNT];
+    ompi_coll_base_com_rule_t *com_rules[COLLCOUNT];
 };
 typedef struct mca_coll_tuned_module_t mca_coll_tuned_module_t;
 OBJ_CLASS_DECLARATION(mca_coll_tuned_module_t);

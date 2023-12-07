@@ -4,6 +4,7 @@
  *                         and Technology (RIST).  All rights reserved.
  * Copyright (c) 2017      Amazon.com, Inc. or its affiliates.  All Rights
  *                         reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -63,6 +64,8 @@
                                                                         \
             .osc_put = ompi_osc_monitoring_## template ##_put,          \
             .osc_get = ompi_osc_monitoring_## template ##_get,          \
+            .osc_put_notify = NULL,                                     \
+            .osc_get_notify = NULL,                                     \
             .osc_accumulate = ompi_osc_monitoring_## template ##_accumulate, \
             .osc_compare_and_swap = ompi_osc_monitoring_## template ##_compare_and_swap, \
             .osc_fetch_and_op = ompi_osc_monitoring_## template ##_fetch_and_op, \

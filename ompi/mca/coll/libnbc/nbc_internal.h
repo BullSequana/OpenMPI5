@@ -18,6 +18,7 @@
  * Copyright (c) 2018      FUJITSU LIMITED.  All rights reserved.
  * Copyright (c) 2021      IBM Corporation.  All rights reserved.
  * Copyright (c) 2022      Amazon.com, Inc. or its affiliates.  All Rights reserved.
+ * Copyright (c) 2022      BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow

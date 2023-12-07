@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2004-2006 High Performance Computing Center Stuttgart,
  *                         University of Stuttgart.  All rights reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -240,6 +241,13 @@ OPAL_DECLSPEC int opal_memchecker_base_get_vbits(void *p, char *vbits, size_t le
 OPAL_DECLSPEC int opal_memchecker_base_set_vbits(void *p, char *vbits, size_t len);
 #if OPAL_WANT_MEMCHECKER == 0
 #    define opal_memchecker_base_set_vbits(p, vbits, len)
+#endif
+
+OPAL_DECLSPEC void opal_memchecker_base_disable_errors(void);
+OPAL_DECLSPEC void opal_memchecker_base_enable_errors(void);
+#if OPAL_WANT_MEMCHECKER == 0
+#define opal_memchecker_base_disable_errors()
+#define opal_memchecker_base_enable_errors()
 #endif
 
 END_C_DECLS

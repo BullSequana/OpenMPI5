@@ -11,7 +11,7 @@
 !                         and Technology (RIST).  All rights reserved.
 ! Copyright (c) 2019      Triad National Security, LLC. All rights
 !                         reserved.
-! Copyright (c) 2021      Bull S.A.S. All rights reserved.
+! Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
 ! Copyright (c) 2021-2022 Triad National Security, LLC. All rights
 !                         reserved.
 ! $COPYRIGHT$

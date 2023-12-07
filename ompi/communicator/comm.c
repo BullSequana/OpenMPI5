@@ -27,6 +27,7 @@
  * Copyright (c) 2018-2022 Triad National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2023      Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -1534,8 +1535,21 @@ static int ompi_comm_idup_with_info_finish (ompi_comm_request_t *request)
 /**********************************************************************/
 int ompi_comm_create_group (ompi_communicator_t *comm, ompi_group_t *group, int tag, ompi_communicator_t **newcomm)
 {
+    ompi_comm_create_group_with_info(comm, group, tag, NULL, newcomm);
+}
+
+/**********************************************************************/
+/**********************************************************************/
+/**********************************************************************/
+int ompi_comm_create_group_with_info (ompi_communicator_t *comm,
+                                      ompi_group_t *group,
+                                      int tag,
+                                      opal_info_t *info,
+                                      ompi_communicator_t **newcomm)
+{
     ompi_communicator_t *newcomp = NULL;
-    int mode = OMPI_COMM_CID_GROUP, rc = OMPI_SUCCESS;
+    int mode = OMPI_COMM_CID_GROUP;
+    int rc = OMPI_SUCCESS;
 
     *newcomm = MPI_COMM_NULL;
 
@@ -1564,6 +1578,12 @@ int ompi_comm_create_group (ompi_communicator_t *comm, ompi_group_t *group, int 
     /* Set name for debugging purposes */
     snprintf(newcomp->c_name, MPI_MAX_OBJECT_NAME, "MPI COMM %s GROUP FROM %s",
 	     ompi_comm_print_cid (newcomp), ompi_comm_print_cid (comm));
+
+    /* Copy info if there is one */
+    if (info) {
+        newcomp->super.s_info = OBJ_NEW(opal_info_t);
+        opal_info_dup(info, &(newcomp->super.s_info));
+    }
 
     /* activate communicator and init coll-module */
     rc = ompi_comm_activate (&newcomp, comm, NULL, &tag, NULL, false, mode);

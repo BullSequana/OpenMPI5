@@ -13,7 +13,7 @@
  * Copyright (c) 2021      University of Alabama at Birmingham. All rights reserved.
  * Copyright (c) 2021      Tennessee Technological University. All rights reserved.
  * Copyright (c) 2021      Cisco Systems, Inc.  All rights reserved
- * Copyright (c) 2021      Bull S.A.S. All rights reserved.
+ * Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -179,7 +179,9 @@ mca_part_persist_progress(void)
     {
         OPAL_THREAD_UNLOCK(&ompi_part_persist.lock);
         block_entry = opal_atomic_add_fetch_32(&(ompi_part_persist.block_entry), -1);
-        return OMPI_SUCCESS;
+        /* Hack to fake activity on the component to make init
+         * to call progress */
+        return 1;
     }
 
     /* Can't do anything if we don't have world */

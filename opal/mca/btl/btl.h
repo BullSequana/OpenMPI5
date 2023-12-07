@@ -21,6 +21,7 @@
  * Copyright (c) 2020-2021 Google, LLC. All rights reserved.
  * Copyright (c) 2021      Amazon.com, Inc. or its affiliates.  All Rights
  *                         reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -478,7 +479,8 @@ struct mca_btl_base_descriptor_t {
     mca_btl_base_completion_fn_t des_cbfunc; /**< local callback function */
     void *des_cbdata;                        /**< opaque callback data */
     void *des_context;                       /**< more opaque callback data */
-    uint32_t des_flags;                      /**< hints to BTL */
+    uint64_t btl_device_id;
+    uint32_t des_flags;                       /**< hints to BTL */
     /** order value, this is only
         valid in the local completion callback
         and may be used in subsequent calls to
@@ -511,6 +513,9 @@ OPAL_DECLSPEC OBJ_CLASS_DECLARATION(mca_btl_base_descriptor_t);
  * signaled operations are not supported.
  */
 #define MCA_BTL_DES_FLAGS_SIGNAL 0x0040
+
+/* Tell BTL that package is part of a RDV message */
+#define MCA_BTL_DES_FLAGS_MESSAGE           0x0040
 
 /**
  * Maximum number of allowed segments in src/dst fields of a descriptor.
@@ -844,6 +849,9 @@ typedef struct mca_btl_base_descriptor_t *(*mca_btl_base_module_prepare_fn_t)(
 typedef struct mca_btl_base_registration_handle_t *(*mca_btl_base_module_register_mem_fn_t)(
     struct mca_btl_base_module_t *btl, struct mca_btl_base_endpoint_t *endpoint, void *base,
     size_t size, uint32_t flags);
+
+typedef void (*mca_btl_base_module_set_btl_device_id_fn_t)(
+    struct mca_btl_base_registration_handle_t *handle, const uint64_t btl_device_id);
 
 /**
  * @brief Deregister a memory region
@@ -1219,10 +1227,10 @@ struct mca_btl_base_module_t {
     mca_btl_base_module_atomic_cswap64_fn_t btl_atomic_cswap;
 
     /* new memory registration functions */
-    mca_btl_base_module_register_mem_fn_t
-        btl_register_mem; /**< memory registration function (NULL if not needed) */
-    mca_btl_base_module_deregister_mem_fn_t
-        btl_deregister_mem; /**< memory deregistration function (NULL if not needed) */
+    mca_btl_base_module_register_mem_fn_t   btl_register_mem;   /**< memory registration function (NULL if not needed) */
+    mca_btl_base_module_deregister_mem_fn_t btl_deregister_mem; /**< memory deregistration function (NULL if not needed) */
+    
+    mca_btl_base_module_set_btl_device_id_fn_t btl_set_device_id;
 
     /** the mpool associated with this btl (optional) */
     mca_mpool_base_module_t *btl_mpool;

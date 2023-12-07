@@ -25,6 +25,7 @@
  * Copyright (c) 2021      Cisco Systems, Inc.  All rights reserved
  * Copyright (c) 2022      Amazon.com, Inc. or its affiliates.  All Rights reserved.
  * Copyright (c) 2022      IBM Corporation. All rights reserved
+ * Copyright (c) 2023-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -55,6 +56,10 @@
 #include "pml_ob1_sendreq.h"
 #include "pml_ob1_hdr.h"
 #include "pml_ob1_accelerator.h"
+
+#if OMPI_PML_OB1_MATCHING_STATS
+#include "pml_ob1_stats.h"
+#endif /* OMPI_PML_OB1_MATCHING_STATS */
 
 OBJ_CLASS_INSTANCE( mca_pml_ob1_buffer_t,
                     opal_free_list_item_t,
@@ -964,6 +969,11 @@ static mca_pml_ob1_recv_request_t *match_one (mca_btl_base_module_t *btl,
         /* if match found, process data */
         if(OPAL_LIKELY(NULL != match)) {
             match->req_recv.req_base.req_proc = proc->ompi_proc;
+#if OMPI_PML_OB1_MATCHING_STATS
+            if (mca_pml_ob1.matching_monitoring) {
+                mca_pml_ob1_compute_depth(comm, proc, match);
+            }
+#endif /* OMPI_PML_OB1_MATCHING_STATS */
 
             if(OPAL_UNLIKELY(MCA_PML_REQUEST_PROBE == match->req_recv.req_base.req_type)) {
                 /* complete the probe */

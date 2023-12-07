@@ -11,7 +11,7 @@
  * Copyright (c) 2004-2005 The Regents of the University of California.
  *                         All rights reserved.
  * Copyright (c) 2010-2012 Sandia National Laboratories.  All rights reserved.
- * Copyright (c) 2014      Bull SAS.  All rights reserved.
+ * Copyright (c) 2014-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2015      Los Alamos National Security, LLC. All rights
  *                         reserved.
  * $COPYRIGHT$
@@ -25,16 +25,15 @@
 #define BTL_PORTALS_H_HAS_BEEN_INCLUDED
 
 #include "opal_config.h"
+#include <portals4.h>
 
 #include "opal/class/opal_free_list.h"
 #include "opal/class/opal_list.h"
 #include "opal/datatype/opal_convertor.h"
-
 #include "opal/mca/btl/base/base.h"
 #include "opal/mca/btl/base/btl_base_error.h"
 #include "opal/mca/btl/btl.h"
-
-#include <portals4.h>
+#include "opal/mca/btl/portals4/btl_portals4_frag.h"
 
 BEGIN_C_DECLS
 

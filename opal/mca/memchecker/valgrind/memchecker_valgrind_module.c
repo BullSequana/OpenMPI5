@@ -3,6 +3,7 @@
  *                         University of Stuttgart.  All rights reserved.
  * Copyright (c) 2004-2008 The Trustees of Indiana University.
  *                         All rights reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -43,6 +44,8 @@ static int valgrind_module_create_block(void *p, size_t len, char *description);
 static int
 valgrind_module_discard_block(void *p); /* Here, we need to do some mapping for valgrind */
 static int valgrind_module_leakcheck(void);
+static void valgrind_module_disable_errors(void);
+static void valgrind_module_enable_errors(void);
 #if 0
 static int valgrind_module_get_vbits(void * p, char * vbits, size_t len);
 static int valgrind_module_set_vbits(void * p, char * vbits, size_t len);
@@ -58,10 +61,22 @@ static const opal_memchecker_base_module_1_0_0_t loc_module = {
     valgrind_module_init,
 
     /* Module function pointers */
-    valgrind_module_runindebugger, valgrind_module_isaddressable, valgrind_module_isdefined,
-    valgrind_module_mem_noaccess, valgrind_module_mem_undefined, valgrind_module_mem_defined,
-    valgrind_module_mem_defined_if_addressable, valgrind_module_create_block,
-    valgrind_module_discard_block, valgrind_module_leakcheck};
+    valgrind_module_runindebugger,
+    valgrind_module_isaddressable,
+    valgrind_module_isdefined,
+    valgrind_module_mem_noaccess,
+    valgrind_module_mem_undefined,
+    valgrind_module_mem_defined,
+    valgrind_module_mem_defined_if_addressable,
+    valgrind_module_create_block,
+    valgrind_module_discard_block,
+    valgrind_module_leakcheck,
+    NULL,
+    NULL,
+    valgrind_module_disable_errors,
+    valgrind_module_enable_errors
+};
+
 
 int opal_memchecker_valgrind_component_query(mca_base_module_t **module, int *priority)
 {
@@ -162,6 +177,16 @@ static int valgrind_module_leakcheck(void)
 {
     VALGRIND_DO_LEAK_CHECK;
     return OPAL_SUCCESS;
+}
+
+static void valgrind_module_disable_errors(void)
+{
+    VALGRIND_DISABLE_ERROR_REPORTING;
+}
+
+static void valgrind_module_enable_errors(void)
+{
+    VALGRIND_ENABLE_ERROR_REPORTING;
 }
 
 #if 0

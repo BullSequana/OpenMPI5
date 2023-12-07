@@ -3,7 +3,7 @@
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2022      IBM Corporation. All rights reserved
- * Copyright (c) 2020-2022 Bull S.A.S. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -42,6 +42,7 @@ ompi_coll_han_components ompi_coll_han_available_components[COMPONENTS_COUNT] = 
     { LIBNBC, "libnbc", NULL },
     { TUNED, "tuned", NULL },
     { SM, "sm", NULL },
+    { BSHARED, "bshared", NULL },
     { ADAPT, "adapt", NULL },
     { HAN, "han", NULL }
 };
@@ -109,7 +110,7 @@ static int han_open(void)
         mca_coll_han_component.han_output = ompi_coll_base_framework.framework_output;
     }
 
-
+    // mca_coll_han_init_algos() done in register, as enum needed in MCA var
 
     return mca_coll_han_init_dynamic_rules();
 }
@@ -151,6 +152,11 @@ static int han_close(void)
     free(mca_coll_han_component.han_op_module_name.scatter.han_op_low_module_name);
     mca_coll_han_component.han_op_module_name.scatter.han_op_low_module_name = NULL;
 
+    mca_coll_han_free_algorithms();
+    if (mca_coll_han_component.han_output_verbose) {
+        opal_output_close(mca_coll_han_component.han_output);
+    }
+
     return OMPI_SUCCESS;
 }
 
@@ -176,9 +182,11 @@ static bool is_simple_implemented(COLLTYPE_T coll)
  * topo level conversions both ways; str <-> id
  * An enum is used for conversions.
  */
-static mca_base_var_enum_value_t level_enumerator[] = {
+mca_base_var_enum_value_t level_enumerator[] = {
+    { LEAF_LEVEL, "leaf_level" },
     { INTRA_NODE, "intra_node" },
     { INTER_NODE, "inter_node" },
+    { GATEWAY, "gateway" },
     { GLOBAL_COMMUNICATOR, "global_communicator" },
     { 0 }
 };
@@ -234,6 +242,21 @@ mca_coll_han_query_module_from_mca(mca_base_component_t* c,
     *module_id = (mod_id < 0) ? 0 : mod_id;
 
     return OMPI_SUCCESS;
+}
+
+const char* mca_coll_han_split_lvl_to_str(SPLIT_LVL_T split_lvl)
+{
+    switch(split_lvl) {
+        case SOCKET:
+            return "socket";
+        case NODE:
+            return "node";
+        case CLUSTER:
+            return "cluster";
+        case NB_SPLIT_LVL:
+        default:
+            return "invalid split level";
+    }
 }
 
 /*
@@ -356,14 +379,61 @@ static int han_register(void)
                                               OPAL_INFO_LVL_9, &cs->han_scatter_low_module,
                                               &cs->han_op_module_name.scatter.han_op_low_module_name);
 
+    cs->han_scatter_handle_reorder_with_copy = false;
+    (void) mca_base_component_var_register(c, "scatter_handle_reorder_with_copy",
+                                           "Whether we handle the reorder "
+                                           "with a recopy in the correct order or "
+                                           "leave it to the inferior layers. "
+                                           "It is checked only if processes are not in "
+                                           "a linear (a.k.a \"block\" in slurm terminology) "
+                                           "distribution."
+                                           "(It only works with the scatter recursive)",
+                                           MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY, &cs->han_scatter_handle_reorder_with_copy);
+
+    cs->han_scatter_memsize = 1024000;
+    (void) mca_base_component_var_register(c, "scatter_memsize",
+                                           "Segment size for pipelined memcare scatter algorithm"
+                                           "Please take into account already reserved memory"
+                                           "and last cache maximum memory",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY, &cs->han_scatter_memsize);
+
+    cs->han_scatter_segsize = 400000;
+    (void) mca_base_component_var_register(c, "scatter_segsize",
+                                           "Minimum segment size for pipelined scatter algorithm"
+                                           "in the case where we have more than 1 segment"
+                                           "In case we'd need more than mx_nb_segments segments"
+                                           "the segsize is allowed to be bigger",
+                                           MCA_BASE_VAR_TYPE_SIZE_T, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY, &cs->han_scatter_segsize);
+
+    cs->han_scatter_max_nb_segments = 8;
+    (void) mca_base_component_var_register(c, "scatter_max_nb_segments",
+                                           "Maximum number of segments for pipelined scatter algorithm",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY, &cs->han_scatter_max_nb_segments);
+
+    cs->han_alltoall_segsize = 1024;
+    (void) mca_base_component_var_register(c, "alltoall_segsize",
+                                           "segment size for pipelined grid alltoall algorithm",
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY, &cs->han_alltoall_segsize);
+
     cs->han_reproducible = 0;
     (void) mca_base_component_var_register(c, "reproducible",
                                            "whether we need reproducible results "
                                            "(enabling this disables optimisations using topology)"
                                            "0 disable 1 enable, default 0",
-                                           MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0,
+                                           MCA_BASE_VAR_TYPE_BOOL, NULL, 0,
+                                           MCA_BASE_VAR_FLAG_SETTABLE,
                                            OPAL_INFO_LVL_3,
-                                           MCA_BASE_VAR_SCOPE_READONLY, &cs->han_reproducible);
+                                           MCA_BASE_VAR_SCOPE_ALL_EQ, &cs->han_reproducible);
     /*
      * Han algorithms MCA parameters for each collective.
      * Shows algorithms thanks to enumerator
@@ -426,7 +496,18 @@ static int han_register(void)
         }
     }
 
+    /* Noreorder gather switch */
+    cs->use_noreorder_gather=0;
+    (void) mca_base_component_var_register(c, "use_noreorder_gather",
+                                           "enable no reorder gather algorithm. "
+                                           "0 disable 1 enable, default 0",
+                                           MCA_BASE_VAR_TYPE_BOOL, NULL, 0,
+                                           MCA_BASE_VAR_FLAG_DEPRECATED,
+                                           OPAL_INFO_LVL_3,
+                                           MCA_BASE_VAR_SCOPE_READONLY, &cs->use_noreorder_gather);
+
     /* Dynamic rules MCA parameters */
+    /* TODO: Find a way to avoid unused entried */
     memset(cs->mca_sub_components, 0,
            COLLCOUNT * (GLOBAL_COMMUNICATOR+1) * sizeof(COMPONENT_T));
 
@@ -441,8 +522,13 @@ static int han_register(void)
             cs->mca_sub_components[coll][topo_lvl] = TUNED;
         }
         cs->mca_sub_components[coll][GLOBAL_COMMUNICATOR] = HAN;
+        cs->mca_sub_components[coll][LEAF_LEVEL] = TUNED;
+        cs->mca_sub_components[coll][INTER_NODE] = BASIC;
     }
     /* Specific default values */
+    cs->mca_sub_components[BARRIER][INTRA_NODE] = BSHARED;
+    cs->mca_sub_components[BARRIER][INTER_NODE] = TUNED;
+    cs->mca_sub_components[BARRIER][LEAF_LEVEL] = BSHARED;
 
     /* Dynamic rule MCA var registration */
     for(coll = 0; coll < COLLCOUNT; coll++) {
@@ -483,6 +569,91 @@ static int han_register(void)
         }
     }
 
+    /* Split choices */
+    for (int split_lvl = 0 ; split_lvl < NB_SPLIT_LVL ; split_lvl++) {
+        cs->split_requested[split_lvl] = 0;
+    }
+
+    int nlevel;
+    char ** supported_splits = NULL;
+    for (int split_lvl = 0 ; split_lvl < NB_SPLIT_LVL ; split_lvl++) {
+            opal_argv_append(&nlevel, &supported_splits,
+                             mca_coll_han_split_lvl_to_str(split_lvl));
+    }
+    char desc [1024];
+    snprintf(desc, sizeof(desc),
+             "Comma separated list of topological splits desired (supported values: %s)",
+             opal_argv_join(supported_splits, ','));
+
+
+    cs->splits = malloc(sizeof(char *));
+    *cs->splits = NULL;
+    mca_base_component_var_register(&mca_coll_han_component.super.collm_version,
+                                    "splits",
+                                    desc,
+                                    MCA_BASE_VAR_TYPE_STRING, NULL, 0,
+                                    0, OPAL_INFO_LVL_6,
+                                    MCA_BASE_VAR_SCOPE_READONLY,
+                                    cs->splits);
+    if (NULL != *cs->splits) {
+        char ** splits = opal_argv_split(*cs->splits, ',');
+        for (int split_lvl = 0 ; split_lvl < NB_SPLIT_LVL ; split_lvl++) {
+            for (char** split = splits; split && *split; ++split) {
+                if (!strcmp(mca_coll_han_split_lvl_to_str(split_lvl), *split)) {
+                    cs->split_requested[split_lvl] = true;
+                }
+            }
+        }
+    } else {
+        cs->split_requested[NODE] = 1;
+    }
+
+    /* Alltoall algorithm */
+    cs->alltoall_algorithm = 2;
+    (void) mca_base_component_var_register(&mca_coll_han_component.super.collm_version,
+                                           "alltoall_algorithm",
+                                           "Alltoall algorithm choice. "
+                                           "0: grid, 1: pipelined grid, 2: rolling igatherw",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0,
+                                           MCA_BASE_VAR_FLAG_DEPRECATED,
+                                           OPAL_INFO_LVL_6,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &(cs->alltoall_algorithm));
+
+    /* Allgather algorithm */
+    cs->allgather_algorithm = 3;
+    (void) mca_base_component_var_register(&mca_coll_han_component.super.collm_version,
+                                           "allgather_algorithm",
+                                           "Allgather algorithm choice. "
+                                           "0: simple, 1: up_comm first, 2: low_comm first, 3: simple_splitted",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0,
+                                           MCA_BASE_VAR_FLAG_DEPRECATED,
+                                           OPAL_INFO_LVL_6,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &(cs->allgather_algorithm));
+
+    /* Allgather Simple Splitted algorithm ibcast loop */
+    cs->allgather_split_ibcast = false;
+    (void) mca_base_component_var_register(&mca_coll_han_component.super.collm_version,
+                                           "allgather_split_ibcast",
+                                           "Loop on ibcast (instead of bcast) in the final phase of "
+                                           "Allgather split algorithm, disabled by default",
+                                           MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0,
+                                           OPAL_INFO_LVL_6,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &(cs->allgather_split_ibcast));
+
+    /* Splitting threshold for recursive splitting allreduce algorithm */
+    cs->allreduce_min_recursive_split_size = 1024;
+    (void) mca_base_component_var_register(&mca_coll_han_component.super.collm_version,
+                                           "allreduce_min_recursive_split_size",
+                                           "Allreduce recursive splitting threshold, "
+                                           "usefull with allreduce recursive splitting algorithm",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_6,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &(cs->allreduce_min_recursive_split_size));
+
     /* Dynamic rules */
     cs->use_dynamic_file_rules = false;
     (void) mca_base_component_var_register(&mca_coll_han_component.super.collm_version,
@@ -492,6 +663,30 @@ static int han_register(void)
                                            OPAL_INFO_LVL_6,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &(cs->use_dynamic_file_rules));
+    
+    /* Pipelined bcast MCA parameters */
+    cs->bcast_pipeline_start_size = 4096;
+    (void) mca_base_component_var_register(c, "bcast_pipeline_start_size",
+                                           "Minimal message size to use pipelined bcast algorithms (default is 4096)",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_6,
+                                           MCA_BASE_VAR_SCOPE_READONLY, &cs->bcast_pipeline_start_size);
+    
+    cs->bcast_pipeline_segment_count = 8;
+    (void) mca_base_component_var_register(c, "bcast_pipeline_segment_count",
+                                           "Maximum segment for pipelined bcast algorithms (default is 8)",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_6,
+                                           MCA_BASE_VAR_SCOPE_READONLY, &cs->bcast_pipeline_segment_count);
+
+    /* Pipelined alltoallv MCA parameters */
+    cs->alltoallv_pipeline_segment_count = 8;
+    (void) mca_base_component_var_register(c, "alltoallv_pipeline_segment_count",
+                                           "Number of segment for pipelined alltoallv algorithm (default is 8)",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_6,
+                                           MCA_BASE_VAR_SCOPE_READONLY, &cs->alltoallv_pipeline_segment_count);
+    if (0 == cs->alltoallv_pipeline_segment_count) {cs->alltoallv_pipeline_segment_count = 8;}
 
     cs->dynamic_rules_filename = NULL;
     (void) mca_base_component_var_register(&mca_coll_han_component.super.collm_version,
@@ -529,6 +724,42 @@ static int han_register(void)
                                            OPAL_INFO_LVL_6,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &(cs->max_dynamic_errors));
+
+    cs->fake_topo_split = false;
+    (void) mca_base_component_var_register(&mca_coll_han_component.super.collm_version,
+                                           "fake_topo_split",
+                                           "Simulate 4 topo level splits. "
+                                           "Require that the number of MPI "
+                                           "ranks to be a multiple of 8 to be "
+                                           "balanced.",
+                                           MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0,
+                                           OPAL_INFO_LVL_6,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &(cs->fake_topo_split));
+
+    cs->balanced_fake_topo_split = true;
+    (void) mca_base_component_var_register(&mca_coll_han_component.super.collm_version,
+                                           "balanced_fake_topo_split",
+                                           "Whether the fake topo level splits are balanced or not."
+                                           " Requires fake_topo_split=true",
+                                           MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0,
+                                           OPAL_INFO_LVL_6,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &(cs->balanced_fake_topo_split));
+
+    cs->fake_topo_split_by_blocks = true;
+    (void) mca_base_component_var_register(&mca_coll_han_component.super.collm_version,
+                                           "fake_topo_split_by_blocks",
+                                           "Whether the fake topology emulates "
+                                           "a linear (a.k.a \"block\" in slurm terminology"
+                                           "process distribution across resources"
+                                           " Requires fake_topo_split=true"
+                                           " To make the topology balanced you need to"
+                                           " give a number of processes multiple of 8",
+                                           MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0,
+                                           OPAL_INFO_LVL_6,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &(cs->fake_topo_split_by_blocks));
 
 
     return OMPI_SUCCESS;

@@ -18,6 +18,9 @@
  * Copyright (c) 2013-2019 Intel, Inc.  All rights reserved.
  * Copyright (c) 2015      Mellanox Technologies, Inc.
  *                         All rights reserved.
+ * Copyright (c) 2016-2019 Research Organization for Information Science
+ *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2017-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2016-2021 Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
  * Copyright (c) 2018-2021 Triad National Security, LLC. All rights
@@ -104,6 +107,10 @@ bool ompi_ftmpi_enabled = false;
 #endif /* OPAL_ENABLE_FT_MPI */
 
 static int ompi_stream_buffering_mode = -1;
+
+#if OMPI_MPI_NOTIFICATIONS
+int ompi_max_notification_idx = 65536;
+#endif
 
 int ompi_mpi_register_params(void)
 {
@@ -445,6 +452,16 @@ int ompi_mpi_register_params(void)
     }
 #endif /* OPAL_ENABLE_FT_MPI */
 
+
+#if OMPI_MPI_NOTIFICATIONS
+    ompi_max_notification_idx = 65536;
+    (void) mca_base_var_register("ompi", "mpi", NULL, "max_notification_idx",
+                                 "The maximal index of MPI RMA notifications id. The memory required for notifications grows proportionnaly with this limit.",
+                                 MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                 OPAL_INFO_LVL_5,
+                                 MCA_BASE_VAR_SCOPE_READONLY,
+                                 &ompi_max_notification_idx);
+#endif
 
     return OMPI_SUCCESS;
 }

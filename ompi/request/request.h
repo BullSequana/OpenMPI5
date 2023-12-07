@@ -18,6 +18,7 @@
  * Copyright (c) 2018      FUJITSU LIMITED.  All rights reserved.
  * Copyright (c) 2018      Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2022      IBM Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
@@ -80,6 +81,40 @@ typedef int (*ompi_request_start_fn_t)(
     struct ompi_request_t ** requests
 );
 
+/**
+ * Mark a range of partitions ready in a partitioned request.
+ *
+ * @param min_part         Minimum partition to mark ready for transfer.
+ * @param max_part         Maximum partition to mark ready for transfer.
+ * @param request (IN/OUT) Request
+ * @return                 OMPI_SUCCESS or failure status.
+ *
+ * Called by MPI_Pready with min == max
+ */
+typedef int (*ompi_request_ready_fn_t)(
+    size_t min_part,
+    size_t max_part,
+    struct ompi_request_t* request
+);
+
+/**
+ * check a range of partitions in a partitioned request.
+ *
+ * @param min_part         minimum partition to check.
+ * @param max_part         maximum partition to check.
+ * @param flag             flag for completion of entire range.
+ * @param request (in/out) request
+ * @return                 ompi_success or failure status.
+ *
+ * Called by MPI_Parrived with min == max
+ */
+typedef int (*ompi_request_arrived_fn_t)(
+    size_t min_part,
+    size_t max_part,
+    int* flag,
+    struct ompi_request_t* request
+);
+
 /*
  * Required function to free the request and any associated resources.
  */
@@ -135,6 +170,8 @@ struct ompi_request_t {
     bool req_persistent;                        /**< flag indicating if the this is a persistent request */
     int req_f_to_c_index;                       /**< Index in Fortran <-> C translation array */
     ompi_request_start_fn_t req_start;          /**< Called by MPI_START and MPI_STARTALL */
+    ompi_request_ready_fn_t req_ready;          /**< Called by MPI_PREADY */
+    ompi_request_arrived_fn_t req_arrived;      /**< Called by MPI_PARRIVED */
     ompi_request_free_fn_t req_free;            /**< Called by free */
     ompi_request_cancel_fn_t req_cancel;        /**< Optional function to cancel the request */
     ompi_request_complete_fn_t req_complete_cb; /**< Called when the request is MPI completed */

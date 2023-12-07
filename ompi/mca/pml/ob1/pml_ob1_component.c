@@ -20,6 +20,7 @@
  *                         and Technology (RIST).  All rights reserved.
  * Copyright (c) 2020      Amazon.com, Inc. or its affiliates.
  *                         All Rights reserved.
+ * Copyright (c) 2023-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -46,6 +47,10 @@
 #include "opal/mca/base/mca_base_pvar.h"
 #include "opal/runtime/opal_params.h"
 #include "opal/mca/btl/base/base.h"
+
+#if OMPI_PML_OB1_MATCHING_STATS
+#include "pml_ob1_stats.h"
+#endif /* OMPI_PML_OB1_MATCHING_STATS */
 
 OBJ_CLASS_INSTANCE( mca_pml_ob1_pckt_pending_t,
                     opal_free_list_item_t,
@@ -223,6 +228,22 @@ static int mca_pml_ob1_component_register(void)
                                            "(default: false)", MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0,
                                            OPAL_INFO_LVL_5, MCA_BASE_VAR_SCOPE_GROUP, &mca_pml_ob1.use_all_rdma);
 
+#if OMPI_PML_OB1_MATCHING_STATS
+    mca_pml_ob1.matching_monitoring = false;
+    (void) mca_base_component_var_register(&mca_pml_ob1_component.pmlm_version,
+                                           "matching_monitoring",
+                                           "Enable pending requests counters. Many requests waiting for a match may cause performance issues.",
+                                           MCA_BASE_VAR_TYPE_BOOL,
+                                           NULL, 0, 0, OPAL_INFO_LVL_5, MCA_BASE_VAR_SCOPE_READONLY,
+                                           &mca_pml_ob1.matching_monitoring);
+    mca_pml_ob1.mode_portals = true;
+    (void) mca_base_component_var_register(&mca_pml_ob1_component.pmlm_version, "mode_portals",
+                                           "Counters emulate portals mecanism where resources are shared by all endpoints",
+                                           MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0,
+                                           OPAL_INFO_LVL_5, MCA_BASE_VAR_SCOPE_READONLY,
+                                           &mca_pml_ob1.mode_portals);
+#endif /* OMPI_PML_OB1_MATCHING_STATS */
+
     mca_pml_ob1.allocator_name = "bucket";
     (void) mca_base_component_var_register(&mca_pml_ob1_component.pmlm_version, "allocator",
                                            "Name of allocator component for unexpected messages",
@@ -241,6 +262,10 @@ static int mca_pml_ob1_component_register(void)
                                            MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, MPI_T_BIND_MPI_COMM,
                                            MCA_BASE_PVAR_FLAG_READONLY | MCA_BASE_PVAR_FLAG_CONTINUOUS,
                                            mca_pml_ob1_get_posted_recvq_size, NULL, mca_pml_ob1_comm_size_notify, NULL);
+
+#if OMPI_PML_OB1_MATCHING_STATS
+    pml_ob1_stats_register_parameters();
+#endif /* OMPI_PML_OB1_MATCHING_STATS */
 
     return OMPI_SUCCESS;
 }

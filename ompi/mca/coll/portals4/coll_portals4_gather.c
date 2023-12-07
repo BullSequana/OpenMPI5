@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015      Sandia National Laboratories. All rights reserved.
+ * Copyright (c) 2019-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  * 
  * Additional copyrights may follow
@@ -60,13 +61,12 @@
 static int32_t get_tree_numdescendants_of(struct ompi_communicator_t* comm,
                                           int vrank)
 {
-    int max;
     int size = ompi_comm_size(comm);
 
     if (0  == vrank) {
         return  size - 1;
     } else {
-        max = 1 << ffs(vrank - 1);
+        int max = 1 << ffs(vrank - 1);
         return ((vrank + max <= size ) ? max : size - vrank) -1;
     }
 
@@ -76,7 +76,7 @@ static ompi_coll_portals4_tree_t*
 ompi_coll_portals4_build_in_order_bmtree( struct ompi_communicator_t* comm,
                                             int root )
 {
-    int childs = 0, rank, vrank, vparent, size, mask = 1, remote;
+    int childs = 0, rank, vrank, vparent, size, mask = 1;
     ompi_coll_portals4_tree_t *bmtree;
 
     /*
@@ -106,7 +106,7 @@ ompi_coll_portals4_build_in_order_bmtree( struct ompi_communicator_t* comm,
     }
 
     while (mask < size) {
-        remote = vrank ^ mask;
+        int remote = vrank ^ mask;
         if (remote < vrank) {
             bmtree->tree_prev = (remote + root) % size;
             break;
@@ -686,7 +686,7 @@ ompi_coll_portals4_gather_intra_binomial_top(const void *sbuf, int scount, struc
     /************************************/
     /* put Recv-ACK to each child       */
     /************************************/
-    for (int i = 0; i < bmtree->tree_nextsize; i++) {
+    for (int32_t i = 0; i < bmtree->tree_nextsize; i++) {
         int32_t child=bmtree->tree_next[i];
         ret = PtlTriggeredPut(request->u.gather.sync_mdh,
                               0,
@@ -728,7 +728,7 @@ ompi_coll_portals4_gather_intra_binomial_top(const void *sbuf, int scount, struc
     /**********************************/
     /* put RTR to each child          */
     /**********************************/
-    for (int i = 0; i < bmtree->tree_nextsize; i++) {
+    for (int32_t i = 0; i < bmtree->tree_nextsize; i++) {
         int32_t child=bmtree->tree_next[i];
         ret = PtlTriggeredPut(request->u.gather.sync_mdh,
                               0,
@@ -748,7 +748,7 @@ ompi_coll_portals4_gather_intra_binomial_top(const void *sbuf, int scount, struc
     /**********************************/
     /* put RTR to each child          */
     /**********************************/
-    for (int i = 0; i < bmtree->tree_nextsize; i++) {
+    for (int32_t i = 0; i < bmtree->tree_nextsize; i++) {
         int32_t child=bmtree->tree_next[i];
         ret = PtlPut(request->u.gather.sync_mdh,
                      0,

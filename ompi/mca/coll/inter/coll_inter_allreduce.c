@@ -14,6 +14,7 @@
  * Copyright (c) 2015-2017 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2023      Jeffrey M. Squyres.  All rights reserved.
+ * Copyright (c) 2023-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -63,7 +64,7 @@ mca_coll_inter_allreduce_inter(const void *sbuf, void *rbuf, int count,
         return OMPI_ERR_OUT_OF_RESOURCE;
     }
     pml_buffer = tmpbuf - gap;
-    source = (MPI_IN_PLACE == sbuf) ? rbuf : sbuf;
+    source = (MPI_IN_PLACE == sbuf) ? rbuf : (char*) sbuf;
 
     err = comm->c_local_comm->c_coll->coll_reduce(source, pml_buffer, count,
                                                   dtype, op, root,

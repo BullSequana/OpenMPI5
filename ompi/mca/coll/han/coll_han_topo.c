@@ -2,7 +2,7 @@
  * Copyright (c) 2018-2021 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
- * Copyright (c) 2020-2021 Bull S.A.S. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  *
  * $COPYRIGHT$
  *
@@ -40,6 +40,7 @@
 
 #include "mpi.h"
 #include "coll_han.h"
+
 
 
 #if OPAL_ENABLE_DEBUG
@@ -88,7 +89,7 @@ mca_coll_han_topo_init(struct ompi_communicator_t *comm,
         low_comm = han_module->cached_low_comms[0];
     } else {
         up_comm  = han_module->sub_comm[INTER_NODE];
-        low_comm = han_module->sub_comm[INTRA_NODE];
+        low_comm = han_module->sub_comm[LEAF_LEVEL];
     }
     assert(up_comm != NULL && low_comm != NULL);
 
@@ -98,6 +99,9 @@ mca_coll_han_topo_init(struct ompi_communicator_t *comm,
     int *topo = (int *)malloc(sizeof(int) * size * num_topo_level);
     int is_imbalanced = 1;
     int ranks_non_consecutive = 0;
+
+    /* Initial value is false */
+    han_module->is_mapbycore = false;
 
     /* node leaders translate the node-local ranks to global ranks and check whether they are placed consecutively */
     if (0 == low_rank) {
@@ -117,11 +121,9 @@ mca_coll_han_topo_init(struct ompi_communicator_t *comm,
         }
 
         int reduce_vals[] = {ranks_non_consecutive, low_size, -low_size};
-
         up_comm->c_coll->coll_allreduce(MPI_IN_PLACE, &reduce_vals, 3,
                                         MPI_INT, MPI_MAX, up_comm,
                                         up_comm->c_coll->coll_allreduce_module);
-
         /* is the distribution of processes balanced per node? */
         is_imbalanced = (reduce_vals[1] == -reduce_vals[2]) ? 0 : 1;
         ranks_non_consecutive = reduce_vals[0];
@@ -134,7 +136,7 @@ mca_coll_han_topo_init(struct ompi_communicator_t *comm,
                                              up_comm->c_coll->coll_iallgather_module);
         }
     }
-
+    
 
     /* broadcast balanced and consecutive properties from node leaders to remaining ranks */
     int bcast_vals[] = {is_imbalanced, ranks_non_consecutive};
@@ -142,7 +144,6 @@ mca_coll_han_topo_init(struct ompi_communicator_t *comm,
                                  low_comm, low_comm->c_coll->coll_bcast_module);
     is_imbalanced = bcast_vals[0];
     ranks_non_consecutive = bcast_vals[1];
-
     /* error out if the rank distribution is not balanced */
     if (is_imbalanced) {
         assert(MPI_REQUEST_NULL == request);
@@ -154,7 +155,6 @@ mca_coll_han_topo_init(struct ompi_communicator_t *comm,
     }
 
     han_module->are_ppn_imbalanced = false;
-
     if (!ranks_non_consecutive) {
         /* fast-path: all ranks are consecutive and balanced so fill topology locally */
         for (int i = 0; i < size; ++i) {
@@ -199,4 +199,37 @@ mca_coll_han_topo_init(struct ompi_communicator_t *comm,
 #endif  /* OPAL_ENABLE_DEBUG */
 
     return topo;
+}
+
+/* Fonction which detects a cyclic distribution */
+void
+mca_coll_han_topo_cyclic(struct ompi_communicator_t *comm,
+                         mca_coll_han_module_t *han_module,
+                         int low_size, int up_size)
+{
+    int low, up;
+    int sub_rank[NB_TOPO_LVL-1];
+    memset(sub_rank, 0, (NB_TOPO_LVL-1)*sizeof(int));
+    for(low=0; low<low_size; low++) {
+        for(up=0; up<up_size; up++) {
+            sub_rank[LEAF_LEVEL] = low;
+            sub_rank[INTER_NODE] = up;
+            if(mca_coll_han_get_global_rank(han_module, sub_rank) !=
+                          low * han_module->maximum_size[INTER_NODE] + up) {
+                han_module->is_cyclic = false;
+                return;
+            }
+        }
+    }
+    han_module->is_cyclic = true;
+}
+
+/*
+ * 2-level compatibility mode with intra/inter node split
+ */
+bool
+mca_coll_han_has_2_levels(const mca_coll_han_module_t *han_module)
+{
+    return (2 == han_module->nb_topo_lvl
+            && mca_coll_han_component.split_requested[NODE]);
 }

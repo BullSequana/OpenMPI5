@@ -2,7 +2,7 @@
  * Copyright (c) 2018-2023 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
- * Copyright (c) 2020      Bull S.A.S. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -32,6 +32,16 @@ mca_coll_han_barrier_intra_simple(struct ompi_communicator_t *comm,
     mca_coll_han_module_t *han_module = (mca_coll_han_module_t *)module;
     ompi_communicator_t *low_comm, *up_comm;
 
+    if (!mca_coll_han_has_2_levels(han_module)) {
+        opal_output_verbose(0, mca_coll_han_component.han_output,
+                             "han cannot handle barrier with this communicator (not 2 levels). Fall back on another component\n");
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automatically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, barrier);
+        return comm->c_coll->coll_barrier(comm, comm->c_coll->coll_bcast_module);
+    }
+
     /* create the subcommunicators */
     if( OMPI_SUCCESS != mca_coll_han_comm_create_new(comm, han_module) ) {
         OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
@@ -43,7 +53,7 @@ mca_coll_han_barrier_intra_simple(struct ompi_communicator_t *comm,
         return han_module->previous_barrier(comm, han_module->previous_barrier_module);
     }
 
-    low_comm = han_module->sub_comm[INTRA_NODE];
+    low_comm = han_module->sub_comm[LEAF_LEVEL];
     up_comm = han_module->sub_comm[INTER_NODE];
 
     int low_rank = ompi_comm_rank(low_comm);

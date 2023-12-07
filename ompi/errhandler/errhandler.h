@@ -19,6 +19,7 @@
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2018-2021 Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -240,7 +241,7 @@ extern opal_atomic_int32_t ompi_instance_count;
                          (mpi_object), \
                          (int)(mpi_object)->errhandler_type, \
                          ompi_errcode_get_mpi_code(err_code), \
-                         (message));
+                         (message))
 
 /**
  * This is the macro to route errors to the 'default' communicator
@@ -265,6 +266,7 @@ extern opal_atomic_int32_t ompi_instance_count;
  * OMPI_SUCCESS.
  */
 #define OMPI_ERRHANDLER_CHECK(rc, mpi_object, err_code, message) \
+  do {                                                       \
   if( OPAL_UNLIKELY(rc != OMPI_SUCCESS) ) { \
     int __mpi_err_code = ompi_errcode_get_mpi_code(err_code);         \
     ompi_errhandler_invoke((mpi_object)->error_handler, \
@@ -273,7 +275,7 @@ extern opal_atomic_int32_t ompi_instance_count;
                            (__mpi_err_code), \
                            (message)); \
     return (__mpi_err_code); \
-  }
+  } } while(0)
 
 /* Same as OMPI_ERRHANDLER_CHECK for non-handle attached errors */
 #define OMPI_ERRHANDLER_NOHANDLE_CHECK(rc, err_code, message) \
@@ -303,6 +305,7 @@ extern opal_atomic_int32_t ompi_instance_count;
  * MPI_SUCCESS.
  */
 #define OMPI_ERRHANDLER_RETURN(rc, mpi_object, err_code, message) \
+  do {                                                       \
   if ( OPAL_UNLIKELY(OMPI_SUCCESS != rc) ) { \
     int __mpi_err_code = ompi_errcode_get_mpi_code(err_code);         \
     ompi_errhandler_invoke((mpi_object)->error_handler, \
@@ -313,7 +316,7 @@ extern opal_atomic_int32_t ompi_instance_count;
     return (__mpi_err_code); \
   } else { \
     return MPI_SUCCESS; \
-  }
+  } } while(0)
 
 /* Same as OMPI_ERRHANDLER_RETURN for non-handle attached errors */
 #define OMPI_ERRHANDLER_NOHANDLE_RETURN(rc, err_code, message) {\

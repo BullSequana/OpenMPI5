@@ -4,7 +4,7 @@
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2022      IBM Corporation. All rights reserved
- * Copyright (c) 2020-2022 Bull S.A.S. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  *
  * $COPYRIGHT$
  *
@@ -221,7 +221,7 @@ mca_coll_han_init_dynamic_rules(void)
             if (topo_lvl < 0) {
                 char *endp;
                 topo_lvl = (int)strtol(topo_lvl_name, &endp, 10);
-                if (('\0' != *endp ) || (topo_lvl < INTRA_NODE) || (topo_lvl >= NB_TOPO_LVL)) {
+                if (('\0' != *endp ) || (topo_lvl < LEAF_LEVEL) || (topo_lvl >= NB_TOPO_LVL)) {
                     opal_output_verbose(5, mca_coll_han_component.han_output,
                                         "coll:han:mca_coll_han_init_dynamic_rules found an error on dynamic rules file %s "
                                         "at line %d: unknown topo level '%s'\n",

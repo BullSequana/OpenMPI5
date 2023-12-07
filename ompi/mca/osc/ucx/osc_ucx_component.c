@@ -1,9 +1,9 @@
 /*
  * Copyright (C) Mellanox Technologies Ltd. 2001-2017. ALL RIGHTS RESERVED.
  * Copyright (c) 2018      Amazon.com, Inc. or its affiliates.  All Rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2021      Triad National Security, LLC. All rights
  *                         reserved.
- *
  * Copyright (c) 2022      IBM Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
@@ -95,6 +95,13 @@ ompi_osc_ucx_module_t ompi_osc_ucx_module_template = {
 
         .osc_put = ompi_osc_ucx_put,
         .osc_get = ompi_osc_ucx_get,
+#if OMPI_MPI_NOTIFICATIONS
+        .osc_put_notify = ompi_osc_ucx_put_notify,
+        .osc_get_notify = ompi_osc_ucx_get_notify,
+#else
+        .osc_put_notify = NULL,
+        .osc_get_notify = NULL,
+#endif
         .osc_accumulate = ompi_osc_ucx_accumulate,
         .osc_compare_and_swap = ompi_osc_ucx_compare_and_swap,
         .osc_fetch_and_op = ompi_osc_ucx_fetch_and_op,
@@ -269,6 +276,11 @@ static int ucp_context_init(bool enable_mt, int proc_world_size) {
     context_params.estimated_num_ppn = opal_process_info.num_local_peers + 1;
     context_params.field_mask |= UCP_PARAM_FIELD_ESTIMATED_NUM_PPN;
 #endif
+
+    if (OMPI_SUCCESS != (ret = opal_common_ucx_update_ucp_config(config))) {
+        ucp_config_release(config);
+        return OMPI_ERROR;
+    }
 
     status = ucp_init(&context_params, config, &mca_osc_ucx_component.wpool->ucp_ctx);
     if (UCS_OK != status) {

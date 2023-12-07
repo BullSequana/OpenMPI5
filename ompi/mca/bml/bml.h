@@ -13,6 +13,7 @@
  * Copyright (c) 2008      Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2012-2015 Los Alamos National Security, LLC.  All rights
  *                         reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -357,6 +358,16 @@ static inline void mca_bml_base_deregister_mem (mca_bml_base_btl_t* bml_btl, mca
     mca_btl_base_module_t* btl = bml_btl->btl;
 
     btl->btl_deregister_mem (btl, handle);
+}
+
+static inline void mca_bml_base_set_multirail_device_id(mca_bml_base_btl_t* bml_btl,
+						        mca_btl_base_registration_handle_t *handle,
+						        const uint64_t device_id)
+{
+	mca_btl_base_module_t* btl = bml_btl->btl;
+
+	if (NULL != btl->btl_set_device_id)
+		btl->btl_set_device_id(handle, device_id);
 }
 
 /*

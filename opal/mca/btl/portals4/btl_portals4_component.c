@@ -12,7 +12,7 @@
  *                         All rights reserved.
  * Copyright (c) 2010-2012 Sandia National Laboratories.  All rights reserved.
  * Copyright (c) 2014-2019 Intel, Inc.  All rights reserved.
- * Copyright (c) 2014      Bull SAS.  All rights reserved.
+ * Copyright (c) 2014-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2015      Los Alamos National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2020      Google, LLC. All rights reserved.

@@ -590,4 +590,5 @@ docs/schizo-ompi-rst-content
 # Copies of the built HTML docs and man pages (for distribution
 # tarballs)
 docs/html
-docs/man
+
+.project

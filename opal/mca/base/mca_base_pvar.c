@@ -3,7 +3,7 @@
  * Copyright (c) 2013-2017 Los Alamos National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2015      Cisco Systems, Inc.  All rights reserved.
- * Copyright (c) 2015      Bull SAS.  All rights reserved.
+ * Copyright (c) 2015-2024 BULL S.A.S. All rights reserved.
  * Copyright (c) 2015      The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.

@@ -3,7 +3,7 @@
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2013-2017 Inria.  All rights reserved.
- * Copyright (c) 2015      Bull SAS.  All rights reserved.
+ * Copyright (c) 2015      Bull SAS. All rights reserved.
  * Copyright (c) 2015-2019 Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
  * Copyright (c) 2018 IBM Corporation. All rights reserved.

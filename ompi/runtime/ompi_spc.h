@@ -4,6 +4,7 @@
  *                         reserved.
  * Copyright (c) 2018      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  *
  * $COPYRIGHT$
  *
@@ -61,6 +62,8 @@ typedef enum ompi_spc_counters {
     OMPI_SPC_RPUT,
     OMPI_SPC_GET,
     OMPI_SPC_RGET,
+    OMPI_SPC_PUT_NOTIFY,
+    OMPI_SPC_GET_NOTIFY,
     OMPI_SPC_PROBE,
     OMPI_SPC_IPROBE,
     OMPI_SPC_BCAST,

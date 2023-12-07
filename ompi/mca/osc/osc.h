@@ -14,6 +14,7 @@
  * Copyright (c) 2015-2017 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2016-2017 IBM Corporation. All rights reserved.
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -223,6 +224,27 @@ typedef int (*ompi_osc_base_module_get_fn_t)(void *origin_addr,
                                             struct ompi_datatype_t *target_dt,
                                             struct ompi_win_t *win);
 
+typedef int (*ompi_osc_base_module_put_notify_fn_t)(const void *origin_addr,
+                                            int origin_count,
+                                            struct ompi_datatype_t *origin_dt,
+                                            int target,
+                                            ptrdiff_t target_disp,
+                                            int target_count,
+                                            struct ompi_datatype_t *target_dt,
+                                            struct ompi_win_t *win,
+                                            int notification_id);
+
+
+typedef int (*ompi_osc_base_module_get_notify_fn_t)(void *origin_addr,
+                                            int origin_count,
+                                            struct ompi_datatype_t *origin_dt,
+                                            int target,
+                                            ptrdiff_t target_disp,
+                                            int target_count,
+                                            struct ompi_datatype_t *target_dt,
+                                            struct ompi_win_t *win,
+                                            int notification_id);
+
 
 typedef int (*ompi_osc_base_module_accumulate_fn_t)(const void *origin_addr,
                                                    int origin_count,
@@ -376,6 +398,8 @@ struct ompi_osc_base_module_3_0_0_t {
 
     ompi_osc_base_module_put_fn_t osc_put;
     ompi_osc_base_module_get_fn_t osc_get;
+    ompi_osc_base_module_put_notify_fn_t osc_put_notify;
+    ompi_osc_base_module_get_notify_fn_t osc_get_notify;
     ompi_osc_base_module_accumulate_fn_t osc_accumulate;
     ompi_osc_base_module_compare_and_swap_fn_t osc_compare_and_swap;
     ompi_osc_base_module_fetch_and_op_fn_t osc_fetch_and_op;

@@ -16,6 +16,7 @@
  * Copyright (c) 2015-2017 Los Alamos National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2020      Intel, Inc.  All rights reserved.
+ * Copyright (c) 2021-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -44,8 +45,9 @@ size_t mca_pml_ob1_rdma_cuda_btls(
     size_t size,
     mca_pml_ob1_com_btl_t* rdma_btls);
 
-int mca_pml_ob1_cuda_need_buffers(void * rreq,
-                                  mca_btl_base_module_t* btl);
+int mca_pml_ob1_cuda_need_buffers(mca_pml_base_request_t * req,
+                                  mca_btl_base_module_t* btl,
+                                  uint32_t expected_usage_flag);
 
 void mca_pml_ob1_cuda_add_ipc_support(struct mca_btl_base_module_t* btl, int32_t flags,
                                       ompi_proc_t* errproc, char* btlinfo);
@@ -156,11 +158,11 @@ size_t mca_pml_ob1_rdma_cuda_btls(
     return num_btls_used;
 }
 
-int mca_pml_ob1_cuda_need_buffers(void * rreq,
-                                  mca_btl_base_module_t* btl)
+int mca_pml_ob1_cuda_need_buffers(mca_pml_base_request_t * req,
+                                  mca_btl_base_module_t* btl,
+                                  uint32_t expected_usage_flag)
 {
-    mca_pml_ob1_recv_request_t* recvreq = (mca_pml_ob1_recv_request_t*)rreq;
-    mca_bml_base_endpoint_t* bml_endpoint = mca_bml_base_get_endpoint (recvreq->req_recv.req_base.req_proc);
+    mca_bml_base_endpoint_t* bml_endpoint = mca_bml_base_get_endpoint (req->req_proc);
     mca_bml_base_btl_t *bml_btl = mca_bml_base_btl_array_find(&bml_endpoint->btl_send, btl);
 
     /* A btl could be in the rdma list but not in the send list so check there also */
@@ -170,18 +172,16 @@ int mca_pml_ob1_cuda_need_buffers(void * rreq,
     /* We should always be able to find back the bml_btl based on the btl */
     assert(NULL != bml_btl);
 
-    if ((recvreq->req_recv.req_base.req_convertor.flags & CONVERTOR_CUDA) &&
-        (bml_btl->btl_flags & MCA_BTL_FLAGS_CUDA_GET)) {
-        recvreq->req_recv.req_base.req_convertor.flags &= ~CONVERTOR_CUDA;
-        if(opal_convertor_need_buffers(&recvreq->req_recv.req_base.req_convertor) == true) {
-            recvreq->req_recv.req_base.req_convertor.flags |= CONVERTOR_CUDA;
-            return true;
-        } else {
-            recvreq->req_recv.req_base.req_convertor.flags |= CONVERTOR_CUDA;
-            return false;
-        }
+    if (0 == (bml_btl->btl_flags & expected_usage_flag)){
+        /* This BTL does not provides this feature */
+        return true;
     }
-    return true;
+    uint32_t cuda_flag = req->req_convertor.flags & CONVERTOR_CUDA;
+    req->req_convertor.flags &= ~CONVERTOR_CUDA;
+    int ret = opal_convertor_need_buffers (&req->req_convertor);
+    req->req_convertor.flags |= cuda_flag;
+
+    return ret;
 }
 
 /*

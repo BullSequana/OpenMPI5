@@ -2,10 +2,10 @@
  * Copyright (c) 2018-2023 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
- * Copyright (c) 2020      Bull S.A.S. All rights reserved.
  *
  * Copyright (c) 2020      Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2022      IBM Corporation. All rights reserved
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -96,6 +96,15 @@ mca_coll_han_allreduce_intra(const void *sbuf,
                              struct ompi_communicator_t *comm, mca_coll_base_module_t * module)
 {
     mca_coll_han_module_t *han_module = (mca_coll_han_module_t *)module;
+
+    if(!mca_coll_han_has_2_levels(han_module)) {
+        opal_output_verbose(30, mca_coll_han_component.han_output,
+                             "han cannot handle allreduce with this communicator (not 2 levels). Drop HAN support in this communicator and fall back on another component\n");
+        /* HAN cannot work with this communicator so fallback on all collectives */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, allreduce);
+        return comm->c_coll->coll_allreduce(sbuf, rbuf, count, dtype, op,
+                                            comm, comm->c_coll->coll_reduce_module);
+    }
 
     /* No support for non-commutative operations */
     if(!ompi_op_is_commute(op)) {
@@ -483,6 +492,15 @@ mca_coll_han_allreduce_intra_simple(const void *sbuf,
     OPAL_OUTPUT_VERBOSE((10, cs->han_output,
                     "[OMPI][han] in mca_coll_han_reduce_intra_simple\n"));
 
+    if(!mca_coll_han_has_2_levels(han_module)) {
+        opal_output_verbose(30, mca_coll_han_component.han_output,
+                             "han cannot handle allreduce with this communicator (not 2 levels). Drop HAN support in this communicator and fall back on another component\n");
+        /* HAN cannot work with this communicator so fallback on all collectives */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, allreduce);
+        return comm->c_coll->coll_allreduce(sbuf, rbuf, count, dtype, op,
+                                            comm, comm->c_coll->coll_reduce_module);
+    }
+
     // Fallback to another component if the op cannot commute
     if (! ompi_op_is_commute(op)) {
         OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
@@ -500,7 +518,7 @@ mca_coll_han_allreduce_intra_simple(const void *sbuf,
                                               comm, han_module->previous_allreduce_module);
     }
 
-    low_comm = han_module->sub_comm[INTRA_NODE];
+    low_comm = han_module->sub_comm[LEAF_LEVEL];
     up_comm = han_module->sub_comm[INTER_NODE];
     low_rank = ompi_comm_rank(low_comm);
 
@@ -623,3 +641,667 @@ mca_coll_han_allreduce_reproducible(const void *sbuf,
                                               han_module
                                               ->reproducible_allreduce_module);
 }
+
+
+/* Basic n-levels adaptative implementation
+ * Ascending reduce + descending bcast
+ *
+ * Example: 12 ranks on 3 nodes
+ *
+ * 0     4     8
+ * 1     5     9
+ * 2     6    10
+ * 3     7    11
+ *
+ * 0  1  2  3  4  5  6  7  8  9  10  11
+ * |_/  /  /   |_/  /  /   |_/   /   /
+ * |___/  /    |___/  /    |____/   /       Intra-node reduce
+ * |_____/     |_____/     |_______/
+ * |           |           |
+ * 0  1  2  3  4  5  6  7  8  9  10  11
+ *  \          |          /
+ *   \_________|_________/
+ *    _________|_________                   Inter-node allreduce
+ *   /         |         \
+ *  /          |          \
+ * 0  1  2  3  4  5  6  7  8  9  10  11
+ * |           |           |
+ * |_____      |_____      |______
+ * |___  \     |___  \     |____   \
+ * |_  \  \    |_  \  \    |_   \   \       Intra-node bcast
+ * | \  \  \   | \  \  \   | \   \   \
+ * 0  1  2  3  4  5  6  7  8  9  10  11
+ *
+ */
+int
+mca_coll_han_allreduce_recursive_reduce_bcast(const void *sbuf,
+                                              void *rbuf,
+                                              int count,
+                                              struct ompi_datatype_t *dtype,
+                                              struct ompi_op_t *op,
+                                              struct ompi_communicator_t *comm,
+                                              mca_coll_base_module_t *module)
+{
+    mca_coll_han_module_t *han_module = (mca_coll_han_module_t *)module;
+    int err;
+
+    // Fallback to another component if the op cannot commute
+    if (! ompi_op_is_commute(op)) {
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                             "han cannot handle allreduce with non-commutative operations. "
+                             "Fall back on another component\n"));
+        return han_module->previous_allreduce(sbuf, rbuf, count, dtype, op,
+                                              comm, han_module->previous_allreduce_module);
+    }
+
+    /* Create the subcommunicators */
+    err = mca_coll_han_comm_create_multi_level(comm, han_module);
+    if( OMPI_SUCCESS != err ) {
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                            "han cannot handle be run with this communicator."
+                            "Fall back on another component\n"));
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automatically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVES(han_module, comm);
+        return comm->c_coll->coll_allreduce(sbuf,
+                                            rbuf,
+                                            count,
+                                            dtype,
+                                            op,
+                                            comm,
+                                            comm->c_coll->coll_allreduce_module);
+    }
+
+    /* Cannot run if ppn are imbalanced */
+    if (han_module->are_ppn_imbalanced) {
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                            "han cannot handle allreduce with this communicator (imbalance). "
+                            "Fall back on another component\n"));
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automatically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, allreduce);
+        return comm->c_coll->coll_allreduce(sbuf,
+                                            rbuf,
+                                            count,
+                                            dtype,
+                                            op,
+                                            comm,
+                                            comm->c_coll->coll_allreduce_module);
+    }
+
+    int topo_lvl;
+    ompi_communicator_t *sub_comm;
+    const int *sub_ranks = mca_coll_han_get_sub_ranks(han_module, ompi_comm_rank(comm));
+
+    /* Climbing reduce */
+    for (topo_lvl = LEAF_LEVEL ; topo_lvl < GLOBAL_COMMUNICATOR ; topo_lvl++) {
+        sub_comm = han_module->sub_comm[topo_lvl];
+
+        const void *tsbuf;
+        void *trbuf;
+
+        if (LEAF_LEVEL == topo_lvl) {
+            /* Keep user args for first reduce */
+            if (MPI_IN_PLACE == sbuf && 0 != sub_ranks[topo_lvl]) {
+                /* Cannot use MPI_IN_PLACE as sbuf if I am not root */
+                tsbuf = rbuf;
+                trbuf = NULL;
+            } else {
+                tsbuf = sbuf;
+                trbuf = rbuf;
+            }
+        } else {
+            if (0 == sub_ranks[topo_lvl]) {
+                /* MPI_IN_PLACE reduce on rbuf */
+                tsbuf = MPI_IN_PLACE;
+                trbuf = rbuf;
+            } else {
+                tsbuf = rbuf;
+            }
+        }
+
+        sub_comm->c_coll->coll_reduce(tsbuf,
+                                      trbuf,
+                                      count,
+                                      dtype,
+                                      op,
+                                      0,
+                                      sub_comm,
+                                      sub_comm->c_coll->coll_reduce_module);
+
+        /* 0 will be our delegate for upper levels */
+        if (0 != sub_ranks[topo_lvl]) {
+            /* It is my last reduce, wait for bcast */
+            break;
+        }
+    }
+
+    if (GLOBAL_COMMUNICATOR == topo_lvl) {
+        /* Only final root should enter this */
+        topo_lvl--;
+    }
+
+    /* Diving bcast, I start where I stopped reduce */
+    for (; topo_lvl >= LEAF_LEVEL ; topo_lvl--) {
+        sub_comm = han_module->sub_comm[topo_lvl];
+
+        sub_comm->c_coll->coll_bcast(rbuf,
+                                     count,
+                                     dtype,
+                                     0,
+                                     sub_comm,
+                                     sub_comm->c_coll->coll_bcast_module);
+    }
+
+    return OMPI_SUCCESS;
+}
+
+/* Basic n-levels adaptative implementation
+ * Ascending allreduce
+ *
+ * Example: 12 ranks on 3 nodes
+ *
+ * 0     4     8
+ * 1     5     9
+ * 2     6    10
+ * 3     7    11
+ *
+ *
+ * 0     4     8
+ * |     |     |
+ * 1     5     9
+ * |     |     |         Intra-node allreduce
+ * 2     6    10
+ * |     |     |
+ * 3     7    11
+ *
+ * 0-----4-----8
+ *
+ * 1-----5-----9
+ *                       Intra-node allreduce
+ * 2-----6----10
+ *
+ * 3-----7----11
+ */
+int
+mca_coll_han_allreduce_recursive_ascending(const void *sbuf,
+                                           void *rbuf,
+                                           int count,
+                                           struct ompi_datatype_t *dtype,
+                                           struct ompi_op_t *op,
+                                           struct ompi_communicator_t *comm,
+                                           mca_coll_base_module_t *module)
+{
+    mca_coll_han_module_t *han_module = (mca_coll_han_module_t *)module;
+    int err;
+
+    // Fallback to another component if the op cannot commute
+    if (! ompi_op_is_commute(op)) {
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                             "han cannot handle allreduce with non-commutative operations. "
+                             "Fall back on another component\n"));
+        return han_module->previous_allreduce(sbuf, rbuf, count, dtype, op,
+                                              comm, han_module->previous_allreduce_module);
+    }
+
+    /* Create the subcommunicators */
+    err = mca_coll_han_comm_create_multi_level(comm, han_module);
+    if( OMPI_SUCCESS != err ) {
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                            "han cannot handle be run with this communicator."
+                            "Fall back on another component\n"));
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automatically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVES(han_module, comm);
+        return comm->c_coll->coll_allreduce(sbuf,
+                                            rbuf,
+                                            count,
+                                            dtype,
+                                            op,
+                                            comm,
+                                            comm->c_coll->coll_allreduce_module);
+    }
+
+    /* Cannot run if ppn are imbalanced */
+    if (han_module->are_ppn_imbalanced) {
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                            "han cannot handle allreduce with this communicator (imbalance). "
+                            "Fall back on another component\n"));
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automatically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, allreduce);
+        return comm->c_coll->coll_allreduce(sbuf,
+                                            rbuf,
+                                            count,
+                                            dtype,
+                                            op,
+                                            comm,
+                                            comm->c_coll->coll_allreduce_module);
+    }
+
+    ompi_communicator_t *sub_comm;
+
+    /* Climbing allreduce */
+    for (int topo_lvl = LEAF_LEVEL ; topo_lvl < GLOBAL_COMMUNICATOR ; topo_lvl++) {
+        sub_comm = han_module->sub_comm[topo_lvl];
+
+        sub_comm->c_coll->coll_allreduce(LEAF_LEVEL == topo_lvl ? sbuf : MPI_IN_PLACE,
+                                         rbuf,
+                                         count,
+                                         dtype,
+                                         op,
+                                         sub_comm,
+                                         sub_comm->c_coll->coll_allreduce_module);
+    }
+
+    return OMPI_SUCCESS;
+}
+
+/* Basic n-levels adaptative implementation
+ * Descending allreduce
+ *
+ * Example: 12 ranks on 3 nodes
+ *
+ * 0     4     8
+ * 1     5     9
+ * 2     6    10
+ * 3     7    11
+ *
+ *
+ * 0-----4-----8
+ *
+ * 1-----5-----9
+ *                       Intra-node allreduce
+ * 2-----6----10
+ *
+ * 3-----7----11
+ *
+ * 0     4     8
+ * |     |     |
+ * 1     5     9
+ * |     |     |         Intra-node allreduce
+ * 2     6    10
+ * |     |     |
+ * 3     7    11
+ */
+int
+mca_coll_han_allreduce_recursive_descending(const void *sbuf,
+                                            void *rbuf,
+                                            int count,
+                                            struct ompi_datatype_t *dtype,
+                                            struct ompi_op_t *op,
+                                            struct ompi_communicator_t *comm,
+                                            mca_coll_base_module_t *module)
+{
+    mca_coll_han_module_t *han_module = (mca_coll_han_module_t *)module;
+    int err;
+
+    // Fallback to another component if the op cannot commute
+    if (! ompi_op_is_commute(op)) {
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                             "han cannot handle allreduce with non-commutative operations. "
+                             "Fall back on another component\n"));
+        return han_module->previous_allreduce(sbuf, rbuf, count, dtype, op,
+                                              comm, han_module->previous_allreduce_module);
+    }
+
+    /* Create the subcommunicators */
+    err = mca_coll_han_comm_create_multi_level(comm, han_module);
+    if( OMPI_SUCCESS != err ) {
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                            "han cannot handle be run with this communicator."
+                            "Fall back on another component\n"));
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automatically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVES(han_module, comm);
+        return comm->c_coll->coll_allreduce(sbuf,
+                                            rbuf,
+                                            count,
+                                            dtype,
+                                            op,
+                                            comm,
+                                            comm->c_coll->coll_allreduce_module);
+    }
+
+    /* Cannot run if ppn are imbalanced */
+    if (han_module->are_ppn_imbalanced) {
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                            "han cannot handle allreduce with this communicator (imbalance). "
+                            "Fall back on another component\n"));
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automatically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, allreduce);
+        return comm->c_coll->coll_allreduce(sbuf,
+                                            rbuf,
+                                            count,
+                                            dtype,
+                                            op,
+                                            comm,
+                                            comm->c_coll->coll_allreduce_module);
+    }
+
+    ompi_communicator_t *sub_comm;
+
+    /* Diving allreduce */
+    for (int topo_lvl = GLOBAL_COMMUNICATOR-1 ; topo_lvl >= LEAF_LEVEL ; topo_lvl--) {
+        sub_comm = han_module->sub_comm[topo_lvl];
+
+        sub_comm->c_coll->coll_allreduce(GLOBAL_COMMUNICATOR-1 == topo_lvl ? sbuf : MPI_IN_PLACE,
+                                         rbuf,
+                                         count,
+                                         dtype,
+                                         op,
+                                         sub_comm,
+                                         sub_comm->c_coll->coll_allreduce_module);
+    }
+
+    return OMPI_SUCCESS;
+}
+
+/* Complex n-levels adaptative implementation
+ * Split allreduce into reduce_scatter + allgatherv
+ *
+ * Example: 12 ranks on 4 nodes on 2 clusters, count = 36
+ *
+ * 0  3      6  9
+ * 1  4      7 10
+ * 2  5      8 11
+ *
+ *
+ * We will follow rank 4 communications
+ * Step 1: Climbing reduce_scatter
+ *
+ * Intra-node reduce_scatter
+ * Intra-node communicator (leaf_level): 3 4 5
+ * count = 36, cut message through reduce_scatter in 3 parts of 12 datatypes
+ *
+ *         3                 4                 5
+ * | 12 | 12 | 12 |  | 12 | 12 | 12 |  | 12 | 12 | 12 |
+ *    |    \    \      /     |    \      /    /     |
+ *    | ____\____\____/______|_____\____/    /      |
+ *    |/     \    \          |      \       /       |
+ *    |       \____\________ | ______\_____/        |
+ *    |             \       \|/       \             |
+ *    |              \_______|_________\___________ |
+ *    |                      |                     \|
+ *    |                      |                      |
+ * | 12 | xx | xx |  | xx | 12 | xx |  | xx | xx | 12 |
+ * 
+ * For now, I am only in charge of the inner part of the buffer
+ *
+ * Inter-node reduce_scatter
+ * Inter-node communicator (inter_node): 1 4
+ * count = 12, cut message through reduce_scatter in 2 parts of 6 datatypes
+ *     1          4
+ * | 6 | 6 |  | 6 | 6 |
+ *   |   \     /    |
+ *   | ___\___/     |
+ *   |/    \        |
+ *   |      \______ |
+ *   |             \|
+ *   |              |
+ * | 6 | x |  | x | 6 |
+ *
+ * For now, I am only in charge of the end of the buffer
+ *
+ * Step 2: upper level allreduce
+ * Inter-cluster communicator (gateway): 4 10
+ * This the upper level, use allreduce
+ *   4     10
+ * | 6 |  | 6 |
+ *    \    /
+ *     \  /
+ *      \/
+ *      /\
+ *     /  \
+ *    /    \
+ * | 6 |  | 6 |
+ *
+ * Now, my contribution is computed
+ *
+ * Step 3: Dive back to retieve other contiburions through allgatherv
+ * Inter-node communicator (inter_node): 1 4
+ *     1          4
+ * | 6 | x |  | x | 6 |
+ *   |              |
+ *   |       ______/|
+ *   |      /       |
+ *   |\____/__      |
+ *   |    /   \     |
+ *   |   /     \    |
+ * | 6 | 6 |  | 6 | 6 |
+ *
+ * Intra-node communicator (leaf_level): 3 4 5
+ *
+ *         3                 4                 5
+ * | 12 | xx | xx |  | xx | 12 | xx |  | xx | xx | 12 |
+ *    |                      |                      |
+ *    |               _______|_____________________/|
+ *    |              /       |         /            |
+ *    |        _____/_______/|\_______/____         |
+ *    |       /    /         |       /     \        |
+ *    |\_____/___ /__________|______/___    \       |
+ *    |     /    /    \      |     /    \    \      |
+ *    |    /    /      \     |    /      \    \     |
+ * | 12 | 12 | 12 |  | 12 | 12 | 12 |  | 12 | 12 | 12 |
+ *
+ */
+int
+mca_coll_han_allreduce_recursive_scattering(const void *sbuf,
+                                            void *rbuf,
+                                            int count,
+                                            struct ompi_datatype_t *dtype,
+                                            struct ompi_op_t *op,
+                                            struct ompi_communicator_t *comm,
+                                            mca_coll_base_module_t *module)
+{
+    mca_coll_han_module_t *han_module = (mca_coll_han_module_t *)module;
+    int err;
+
+    // Fallback to another component if the op cannot commute
+    if (! ompi_op_is_commute(op)) {
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                             "han cannot handle allreduce with non-commutative operations. "
+                             "Fall back on another component\n"));
+        return han_module->previous_allreduce(sbuf, rbuf, count, dtype, op,
+                                              comm, han_module->previous_allreduce_module);
+    }
+
+    /* Create the subcommunicators */
+    err = mca_coll_han_comm_create_multi_level(comm, han_module);
+    if( OMPI_SUCCESS != err ) {
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                            "han cannot handle be run with this communicator."
+                            "Fall back on another component\n"));
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automatically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVES(han_module, comm);
+        return comm->c_coll->coll_allreduce(sbuf,
+                                            rbuf,
+                                            count,
+                                            dtype,
+                                            op,
+                                            comm,
+                                            comm->c_coll->coll_allreduce_module);
+    }
+
+    /* Cannot run if ppn are imbalanced */
+    if (han_module->are_ppn_imbalanced) {
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                            "han cannot handle allreduce with this communicator (imbalance). "
+                            "Fall back on another component\n"));
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automatically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, allreduce);
+        return comm->c_coll->coll_allreduce(sbuf,
+                                            rbuf,
+                                            count,
+                                            dtype,
+                                            op,
+                                            comm,
+                                            comm->c_coll->coll_allreduce_module);
+    }
+
+    /* Structure storing messages information at each level */
+    struct {
+        /* Start offset of our part */
+        int start_off;
+
+        /* Size of our part */
+        int part_size;
+
+        /* Count/Displacement used for both scatter of reduce_scatter and allgatherv */
+        int *rcounts;
+        int *displs;
+    } split_infos[NB_TOPO_LVL-1];
+
+    /* Some aliases */
+    struct ompi_communicator_t **sub_comm = han_module->sub_comm;
+    const int *sub_ranks = mca_coll_han_get_sub_ranks(han_module, ompi_comm_rank(comm));
+
+    /* Extract datatype extent */
+    ptrdiff_t ddt_ext;
+    ompi_datatype_type_extent(dtype, &ddt_ext);
+
+    /* Find the upper topological level where sub_comm != MPI_COMM_SELF */
+    int topo_lvl;
+    int upper_lvl = 0;
+    for (topo_lvl = 0 ; topo_lvl < GLOBAL_COMMUNICATOR ; topo_lvl++) {
+        if (ompi_comm_size(sub_comm[topo_lvl]) > 1) {
+            upper_lvl = topo_lvl;
+        }
+    }
+
+    /* Climbing reduce_scatter */
+    for (topo_lvl = LEAF_LEVEL ; topo_lvl < upper_lvl ; topo_lvl++) {
+        if(0 == topo_lvl) {
+            split_infos[topo_lvl].start_off = 0;
+            split_infos[topo_lvl].part_size = count;
+        } else {
+            split_infos[topo_lvl].start_off = split_infos[topo_lvl-1].start_off
+                                              + split_infos[topo_lvl-1].displs[sub_ranks[topo_lvl-1]];
+            split_infos[topo_lvl].part_size = split_infos[topo_lvl-1].rcounts[sub_ranks[topo_lvl-1]];
+        }
+
+        if (0 == split_infos[topo_lvl].part_size) {
+            break;
+        }
+
+        int sub_comm_size = ompi_comm_size(sub_comm[topo_lvl]);
+
+        split_infos[topo_lvl].rcounts = malloc(sub_comm_size * sizeof(int));
+        split_infos[topo_lvl].displs = malloc(sub_comm_size * sizeof(int));
+
+        int part = split_infos[topo_lvl].part_size / sub_comm_size;
+
+        if (part < mca_coll_han_component.allreduce_min_recursive_split_size) {
+            part = mca_coll_han_component.allreduce_min_recursive_split_size;
+            int rest = split_infos[topo_lvl].part_size % part;
+
+            int rank;
+            for (rank = 0 ; rank < split_infos[topo_lvl].part_size / part ; rank++) {
+                split_infos[topo_lvl].displs[rank] = rank*part;
+                split_infos[topo_lvl].rcounts[rank] = part;
+            }
+
+            split_infos[topo_lvl].displs[rank] = rank*part;
+            split_infos[topo_lvl].rcounts[rank] = rest;
+            rank++;
+
+            for (; rank < sub_comm_size ; rank++) {
+                split_infos[topo_lvl].displs[rank] = split_infos[topo_lvl].part_size;
+                split_infos[topo_lvl].rcounts[rank] = 0;
+            }
+        } else {
+            int rest = split_infos[topo_lvl].part_size % sub_comm_size;
+            for (int rank = 0 ; rank < sub_comm_size ; rank++) {
+                /* Store the start of each buffer (for allgatherv) */
+                split_infos[topo_lvl].displs[rank] = rank * part;
+                split_infos[topo_lvl].rcounts[rank] = part;
+
+                if (rank < rest) {
+                    split_infos[topo_lvl].displs[rank] += rank;
+                    split_infos[topo_lvl].rcounts[rank]++;
+                } else {
+                    split_infos[topo_lvl].displs[rank] += rest;
+                }
+            }
+        }
+
+        const char *tsbuf;
+        if (0 == topo_lvl) {
+            tsbuf = (const char*) sbuf;
+        } else {
+            tsbuf = MPI_IN_PLACE;
+        }
+
+        sub_comm[topo_lvl]->c_coll->coll_reduce_scatter(tsbuf,
+                                                        rbuf,
+                                                        split_infos[topo_lvl].rcounts,
+                                                        dtype,
+                                                        op,
+                                                        sub_comm[topo_lvl],
+                                                        sub_comm[topo_lvl]->c_coll->coll_reduce_scatter_module);
+    }
+
+    /* Use allreduce on upper level
+     * Allows optimizations on allreduce collective
+     * Avoid unwanted buffer copy on some complex cases
+     */
+    if (topo_lvl == upper_lvl) {
+        const char *tsbuf;
+        char *trbuf;
+        int tcount = split_infos[topo_lvl-1].rcounts[sub_ranks[topo_lvl-1]];
+
+        if (tcount > 0) {
+            if (0 == split_infos[topo_lvl-1].start_off) {
+                tsbuf = MPI_IN_PLACE;
+                trbuf = rbuf;
+            } else {
+                tsbuf = rbuf;
+                trbuf = ((char*) rbuf)
+                    + ddt_ext * (split_infos[topo_lvl-1].start_off
+                            + split_infos[topo_lvl-1].displs[sub_ranks[topo_lvl-1]]);
+            }
+
+            sub_comm[topo_lvl]->c_coll->coll_allreduce(tsbuf,
+                                                       trbuf,
+                                                       tcount,
+                                                       dtype,
+                                                       op,
+                                                       sub_comm[topo_lvl],
+                                                       sub_comm[topo_lvl]->c_coll->coll_allreduce_module);
+        }
+    }
+
+    /* Diving Allgatherv */
+    for (topo_lvl-- ; topo_lvl >= LEAF_LEVEL ; topo_lvl--) {
+        char *trbuf;
+        trbuf = ((char*) rbuf)
+                + ddt_ext * split_infos[topo_lvl].start_off;
+
+        sub_comm[topo_lvl]->c_coll->coll_allgatherv(MPI_IN_PLACE,
+                                                    split_infos[topo_lvl].rcounts[sub_ranks[topo_lvl]],
+                                                    dtype,
+                                                    trbuf,
+                                                    split_infos[topo_lvl].rcounts,
+                                                    split_infos[topo_lvl].displs,
+                                                    dtype,
+                                                    sub_comm[topo_lvl],
+                                                    sub_comm[topo_lvl]->c_coll->coll_allgatherv_module);
+
+        free(split_infos[topo_lvl].displs);
+        free(split_infos[topo_lvl].rcounts);
+    }
+
+    return OMPI_SUCCESS;
+}
+

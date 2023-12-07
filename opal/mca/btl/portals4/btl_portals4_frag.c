@@ -10,7 +10,7 @@
  * Copyright (c) 2004-2005 The Regents of the University of California.
  *                         All rights reserved.
  * Copyright (c) 2008      UT-Battelle, LLC. All rights reserved.
- * Copyright (c) 2014      Bull SAS.  All rights reserved.
+ * Copyright (c) 2014-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -45,7 +45,7 @@ static void mca_btl_portals4_frag_eager_constructor(mca_btl_portals4_frag_t *fra
 
 static void mca_btl_portals4_frag_eager_destructor(mca_btl_portals4_frag_t *frag)
 {
-    if (PTL_INVALID_HANDLE != frag->me_h) {
+    if (!PtlHandleIsEqual(PTL_INVALID_HANDLE, frag->me_h)) {
         PtlMEUnlink(frag->me_h);
         frag->me_h = PTL_INVALID_HANDLE;
     }

@@ -18,6 +18,7 @@
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2018-2019 Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2023-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -88,6 +89,11 @@ struct mca_pml_ob1_t {
     unsigned int unexpected_limit;
     /* Accelerator support initialized */
     bool accelerator_enabled;
+
+#if OMPI_PML_OB1_MATCHING_STATS
+    bool matching_monitoring;
+    bool mode_portals;
+#endif /* OMPI_PML_OB1_MATCHING_STATS */
 };
 typedef struct mca_pml_ob1_t mca_pml_ob1_t;
 

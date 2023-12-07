@@ -9,6 +9,7 @@
  * Copyright (c) 2019      Intel, Inc.  All rights reserved.
  * Copyright (c) 2022      Amazon.com, Inc. or its affiliates.
  *                         All Rights reserved.
+ * Copyright (c) 2023-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -247,6 +248,11 @@ int mca_pml_ucx_open(void)
     params.estimated_num_ppn = opal_process_info.num_local_peers + 1;
     params.field_mask       |= UCP_PARAM_FIELD_ESTIMATED_NUM_PPN;
 #endif
+
+    if (OMPI_SUCCESS != opal_common_ucx_update_ucp_config(config)) {
+        ucp_config_release(config);
+        return OMPI_ERROR;
+    }
 
     status = ucp_init(&params, config, &ompi_pml_ucx.ucp_context);
     ucp_config_release(config);

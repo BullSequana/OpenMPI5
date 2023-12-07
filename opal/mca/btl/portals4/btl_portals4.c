@@ -14,7 +14,7 @@
  * Copyright (c) 2014      Los Alamos National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2014-2019 Intel, Inc.  All rights reserved.
- * Copyright (c) 2014      Bull SAS.  All rights reserved.
+ * Copyright (c) 2014-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -487,13 +487,13 @@ int mca_btl_portals4_free(struct mca_btl_base_module_t *btl_base, mca_btl_base_d
         OPAL_BTL_PORTALS4_FRAG_RETURN_EAGER(portals4_btl, frag);
 
     } else if (BTL_PORTALS4_FRAG_TYPE_MAX == frag->type) {
-        if (frag->me_h != PTL_INVALID_HANDLE) {
+        if (!PtlHandleIsEqual(frag->me_h,PTL_INVALID_HANDLE)) {
             frag->me_h = PTL_INVALID_HANDLE;
         }
         OPAL_BTL_PORTALS4_FRAG_RETURN_MAX(portals4_btl, frag);
 
     } else if (BTL_PORTALS4_FRAG_TYPE_USER == frag->type) {
-        if (frag->me_h != PTL_INVALID_HANDLE) {
+        if (!PtlHandleIsEqual(frag->me_h,PTL_INVALID_HANDLE)) {
             frag->me_h = PTL_INVALID_HANDLE;
         }
         OPAL_THREAD_ADD_FETCH32(&portals4_btl->portals_outstanding_ops, -1);
@@ -630,14 +630,13 @@ mca_btl_base_registration_handle_t *mca_btl_portals4_register_mem(mca_btl_base_m
 int mca_btl_portals4_deregister_mem(mca_btl_base_module_t *btl_base,
                                     mca_btl_base_registration_handle_t *handle)
 {
-    int ret;
-
     OPAL_OUTPUT_VERBOSE((90, opal_btl_base_framework.framework_output,
                          "mca_btl_portals4_deregister_mem NI=%d handle=%p key=%ld me_h=%d\n",
                          ((struct mca_btl_portals4_module_t *) btl_base)->interface_num,
                          (void *) handle, handle->key, handle->me_h));
 
     if (!PtlHandleIsEqual(handle->me_h, PTL_INVALID_HANDLE)) {
+        int ret;
         ret = PtlMEUnlink(handle->me_h);
         if (PTL_OK != ret) {
             opal_output_verbose(1, opal_btl_base_framework.framework_output,
@@ -663,10 +662,10 @@ int mca_btl_portals4_finalize(struct mca_btl_base_module_t *btl)
     OBJ_DESTRUCT(&portals4_btl->portals_frag_user);
     OBJ_DESTRUCT(&portals4_btl->portals_recv_blocks);
 
-    free(portals4_btl);
-
     OPAL_OUTPUT_VERBOSE((90, opal_btl_base_framework.framework_output,
                          "mca_btl_portals4_finalize NI %d: OK\n", portals4_btl->interface_num));
+
+    free(portals4_btl);
 
     return OPAL_SUCCESS;
 }
@@ -712,7 +711,7 @@ void mca_btl_portals4_free_module(mca_btl_portals4_module_t *portals4_btl)
         portals4_btl->recv_idx = (ptl_pt_index_t) ~0UL;
     }
 
-    if (PTL_EQ_NONE != portals4_btl->recv_eq_h) {
+    if (!PtlHandleIsEqual(PTL_EQ_NONE, portals4_btl->recv_eq_h)) {
         ret = PtlEQFree(portals4_btl->recv_eq_h);
         if (PTL_OK != ret)
             OPAL_OUTPUT_VERBOSE(

@@ -556,6 +556,22 @@ OMPI_MAN3 = \
         MPIX_Comm_shrink.3 \
         MPIX_Query_cuda_support.3 \
         MPIX_Query_rocm_support.3 \
+        MPIX_Get_notify.3 \
+        MPIX_Palltoall_init.3 \
+        MPIX_Palltoallr_init.3 \
+        MPIX_Palltoallv_init.3 \
+        MPIX_Palltoallvr_init.3 \
+        MPIX_Pbcast_init.3 \
+        MPIX_Pbcastr_init.3 \
+        MPIX_Pgather_init.3 \
+        MPIX_Pgatherr_init.3 \
+        MPIX_Preduce_init.3 \
+        MPIX_Preducer_init.3 \
+        MPIX_Put_notify.3 \
+        MPIX_Win_allocate_notify.3 \
+        MPIX_Win_create_notify.3 \
+        MPIX_Win_test_notify.3 \
+        MPIX_Win_wait_notify.3 \
         OMPI_Affinity_str.3
 
 OMPI_MAN7 = \

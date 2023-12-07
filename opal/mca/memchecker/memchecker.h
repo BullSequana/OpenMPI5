@@ -7,6 +7,7 @@
  * Copyright (c) 2015      Los Alamos National Security, LLC. All rights
  *                         reserved.
  *
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -108,7 +109,12 @@ typedef int (*opal_memchecker_base_module_get_vbits_fn_t)(void *p, char *vbits, 
 /**
  * Module function to set vbits
  */
-typedef int (*opal_memchecker_base_module_set_vbits_fn_t)(void *p, char *vbits, size_t len);
+typedef int (*opal_memchecker_base_module_set_vbits_fn_t)(void * p, char * vbits, size_t len);
+
+/* Module functions to disable/enable error checks */
+typedef void (*opal_memchecker_base_module_disable_errors)(void);
+typedef void (*opal_memchecker_base_module_enable_errors)(void);
+
 
 /**
  * Structure for memchecker components.
@@ -168,6 +174,10 @@ struct opal_memchecker_base_module_1_0_0_t {
 
     /** Module function to set vbits */
     opal_memchecker_base_module_set_vbits_fn_t set_vbits;
+
+    /* Module functions to disable/enable error checks */
+    opal_memchecker_base_module_disable_errors disable_errors;
+    opal_memchecker_base_module_enable_errors enable_errors;
 };
 
 /**

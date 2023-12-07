@@ -13,7 +13,7 @@
  * Copyright (c) 2013-2022 Sandia National Laboratories. All rights reserved.
  * Copyright (c) 2015      Los Alamos National Security, LLC. All rights
  *                         reserved.
- * Copyright (c) 2015      Bull SAS.  All rights reserved.
+ * Copyright (c) 2015-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -32,6 +32,12 @@
 
 #include "coll_portals4.h"
 #include "coll_portals4_request.h"
+
+#include "mpi.h"
+#include "opal/mca/btl/portals4/btl_portals4.h"
+#include "ompi/mca/bml/base/base.h"
+#include "ompi/mca/bml/bml.h"
+#include "ompi/mca/pml/base/base.h"
 
 #define REQ_COLL_TABLE_ID           15
 #define REQ_COLL_FINISH_TABLE_ID    16
@@ -147,8 +153,6 @@ const char *mca_coll_portals4_component_version_string =
 
 int mca_coll_portals4_priority = 10;
 
-#define MCA_COLL_PORTALS4_EQ_SIZE	4096
-
 static int portals4_open(void);
 static int portals4_close(void);
 static int portals4_register(void);
@@ -202,7 +206,7 @@ opal_stderr(const char *msg, const char *file,
 static int
 portals4_register(void)
 {
-    mca_coll_portals4_priority = 100;
+    mca_coll_portals4_priority = 10;
     (void) mca_base_component_var_register(&mca_coll_portals4_component.super.collm_version, "priority",
             "Priority of the portals4 coll component",
             MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
@@ -228,6 +232,16 @@ portals4_register(void)
             MCA_BASE_VAR_SCOPE_READONLY,
             &mca_coll_portals4_component.portals_max_msg_size);
 
+    mca_coll_portals4_component.eq_size = 65536;
+    (void) mca_base_component_var_register(&mca_coll_portals4_component.super.collm_version,
+                                           "eq_size",
+                                           "Size of the different event queues used in portals4 collective component.",
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_LONG,
+                                           NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &mca_coll_portals4_component.eq_size);
+
     return OMPI_SUCCESS;
 }
 
@@ -239,13 +253,17 @@ portals4_open(void)
 
     mca_coll_portals4_component.ni_h = PTL_INVALID_HANDLE;
     mca_coll_portals4_component.uid = PTL_UID_ANY;
-    mca_coll_portals4_component.pt_idx = -1;
-    mca_coll_portals4_component.finish_pt_idx = -1;
+    mca_coll_portals4_component.pt_idx = 0;
+    mca_coll_portals4_component.finish_pt_idx = 0;
     mca_coll_portals4_component.eq_h = PTL_INVALID_HANDLE;
     mca_coll_portals4_component.unex_me_h = PTL_INVALID_HANDLE;
     mca_coll_portals4_component.finish_me_h = PTL_INVALID_HANDLE;
     mca_coll_portals4_component.zero_md_h = PTL_INVALID_HANDLE;
     mca_coll_portals4_component.data_md_h = PTL_INVALID_HANDLE;
+    mca_coll_portals4_component.me_linked = 0;
+    mca_coll_portals4_component.me_to_link = 0;
+    mca_coll_portals4_component.thread_multiple_enabled = 0;
+    mca_coll_portals4_component.is_mtl_active = -1;
 
     OBJ_CONSTRUCT(&mca_coll_portals4_component.requests, opal_free_list_t);
     ret = opal_free_list_init(&mca_coll_portals4_component.requests,
@@ -311,7 +329,7 @@ portals4_close(void)
                     __FILE__, __LINE__, ret);
         }
     }
-    if (mca_coll_portals4_component.finish_pt_idx >= 0) {
+    if (mca_coll_portals4_component.finish_pt_idx == REQ_COLL_FINISH_TABLE_ID) {
         ret = PtlPTFree(mca_coll_portals4_component.ni_h, mca_coll_portals4_component.finish_pt_idx);
         if (PTL_OK != ret) {
             opal_output_verbose(1, ompi_coll_base_framework.framework_output,
@@ -319,7 +337,7 @@ portals4_close(void)
                     __FILE__, __LINE__, ret);
         }
     }
-    if (mca_coll_portals4_component.pt_idx >= 0) {
+    if (mca_coll_portals4_component.pt_idx == REQ_COLL_TABLE_ID) {
         ret = PtlPTFree(mca_coll_portals4_component.ni_h, mca_coll_portals4_component.pt_idx);
         if (PTL_OK != ret) {
             opal_output_verbose(1, ompi_coll_base_framework.framework_output,
@@ -415,7 +433,7 @@ portals4_init_query(bool enable_progress_threads,
     }
 
     ret = PtlEQAlloc(mca_coll_portals4_component.ni_h,
-            MCA_COLL_PORTALS4_EQ_SIZE,
+            mca_coll_portals4_component.eq_size,
             &mca_coll_portals4_component.eq_h);
     if (PTL_OK != ret) {
         opal_output_verbose(1, ompi_coll_base_framework.framework_output,
@@ -440,7 +458,7 @@ portals4_init_query(bool enable_progress_threads,
         opal_output_verbose(1, ompi_coll_base_framework.framework_output,
                 "%s:%d: PtlPTAlloc return wrong pt_idx: %d\n",
                 __FILE__, __LINE__,
-                mca_coll_portals4_component.finish_pt_idx);
+                mca_coll_portals4_component.pt_idx);
         return OMPI_ERROR;
     }
 
@@ -501,13 +519,14 @@ portals4_init_query(bool enable_progress_threads,
     OPAL_OUTPUT_VERBOSE((90, ompi_coll_base_framework.framework_output, "PtlMDBind start=%p length=%lx\n", md.start, md.length));
 
     /* setup finish ack ME */
+    mca_coll_portals4_component.me_to_link++;
     me.start = NULL;
     me.length = 0;
     me.ct_handle = PTL_CT_NONE;
     me.min_free = 0;
     me.uid = mca_coll_portals4_component.uid;
     me.options = PTL_ME_OP_PUT |
-        PTL_ME_EVENT_LINK_DISABLE | PTL_ME_EVENT_UNLINK_DISABLE;
+        PTL_ME_EVENT_UNLINK_DISABLE;
     me.match_id.phys.nid = PTL_NID_ANY;
     me.match_id.phys.pid = PTL_PID_ANY;
     me.match_bits = 0;
@@ -527,14 +546,14 @@ portals4_init_query(bool enable_progress_threads,
     }
 
     /* This ME is used for RTR exchange only */
+    mca_coll_portals4_component.me_to_link++;
     me.start = NULL;
     me.length = 0;
     me.ct_handle = PTL_CT_NONE;
     me.min_free = 0;
     me.uid = mca_coll_portals4_component.uid;
     me.options = PTL_ME_OP_PUT |
-            PTL_ME_EVENT_SUCCESS_DISABLE | PTL_ME_EVENT_OVER_DISABLE |
-            PTL_ME_EVENT_LINK_DISABLE | PTL_ME_EVENT_UNLINK_DISABLE;
+            PTL_ME_EVENT_OVER_DISABLE | PTL_ME_EVENT_UNLINK_DISABLE;
     me.match_id.phys.nid = PTL_NID_ANY;
     me.match_id.phys.pid = PTL_PID_ANY;
 
@@ -567,8 +586,19 @@ portals4_init_query(bool enable_progress_threads,
         return OMPI_ERROR;
 
     }
-    return OMPI_SUCCESS;
 
+    /* Wait for MEs link */
+    while (mca_coll_portals4_component.me_to_link != mca_coll_portals4_component.me_linked) {
+        opal_progress();
+    }
+
+
+    /* Multithreading support */
+    if (enable_progress_threads || enable_mpi_threads) {
+        mca_coll_portals4_component.thread_multiple_enabled = 1;
+    }
+
+   return OMPI_SUCCESS;
 }
 
 /*
@@ -590,14 +620,65 @@ portals4_comm_query(struct ompi_communicator_t *comm,
         return NULL;
     }
 
+    /* Check PML */
+    if (!strcmp(mca_pml_base_selected_component.pmlm_version.mca_component_name, "bxi")) {
+        opal_output_verbose(1, ompi_coll_base_framework.framework_output,
+                            "[COLL/PORTALS4] PML/BXI not supported for now\n");
+        return NULL;
+    }
+
     /* Make sure someone is populating the proc table, since we're not
        in a really good position to do so */
+    /* Try MTL/PORTALS4 */
     proc = ompi_proc_local()->proc_endpoints[OMPI_PROC_ENDPOINT_TAG_PORTALS4];
-    if (NULL == proc) {
-        opal_output_verbose(1, ompi_coll_base_framework.framework_output,
-                "%s:%d: Proc table not previously populated",
-                __FILE__, __LINE__);
-        return NULL;
+    if (NULL != proc) {
+        /* Activate retrieving endpoints through MTL */
+        mca_coll_portals4_component.is_mtl_active = 1;
+    } else {
+        /* Try BTL/PORTALS4 */
+        int rank, size;
+        rank = ompi_comm_rank(comm);
+        size = ompi_comm_size(comm);
+        /* Check all procs are populated via BTL/portals4 */
+        char has_portals4 = 1;
+        int i;
+        for (i = 0; i < size; i++) {
+            int peer = i;
+            if (peer == rank) {
+                /* Skip self */
+                continue;
+            }
+            /* Get BTLs */
+            ompi_proc_t *dst_proc = ompi_comm_peer_lookup(comm, peer);
+            mca_bml_base_endpoint_t* endpoint = mca_bml_base_get_endpoint (dst_proc);
+            mca_bml_base_btl_t * bml_btl;
+            int btl = 0;
+
+            do {
+                bml_btl = mca_bml_base_btl_array_get_index(&endpoint->btl_send,btl++);
+            } while (NULL != bml_btl &&
+                     strcmp(bml_btl->btl->btl_component->btl_version.mca_component_name, "portals4"));
+            if (NULL == bml_btl) {
+                opal_output_verbose(1, ompi_coll_base_framework.framework_output,
+                                    "%s:%d: No BTL/Portals4, nor MTL/Portals4 for %d",
+                                    __FILE__, __LINE__, peer);
+                return NULL;
+            }
+
+            /* Check endpoint is populated */
+            proc = &(bml_btl->btl_endpoint->ptl_proc);
+            has_portals4 &= (NULL != proc);
+        }
+
+        if (has_portals4) {
+            /* Activate retrieving endpoints through BTL */
+            mca_coll_portals4_component.is_mtl_active = 0;
+        } else {
+            opal_output_verbose(1, ompi_coll_base_framework.framework_output,
+                                "%s:%d: Proc table not previously populated",
+                                __FILE__, __LINE__);
+            return NULL;
+        }
     }
 
     opal_output_verbose(50, ompi_coll_base_framework.framework_output,
@@ -705,12 +786,12 @@ static char *evname[] = {
 static int
 portals4_progress(void)
 {
-    int count = 0, ret;
+    int count = 0;
     ptl_event_t ev;
     ompi_coll_portals4_request_t *ptl_request;
 
     while (true) {
-        ret = PtlEQGet(mca_coll_portals4_component.eq_h, &ev);
+        int ret = PtlEQGet(mca_coll_portals4_component.eq_h, &ev);
         if (PTL_OK == ret) {
 
             OPAL_OUTPUT_VERBOSE((10, ompi_coll_base_framework.framework_output, "event type=%s\n", evname[ev.type]));
@@ -748,11 +829,18 @@ portals4_progress(void)
                         break;
                     }
                 }
-
-                if (PTL_OK != ev.ni_fail_type) {
-                    OPAL_OUTPUT_VERBOSE((10, ompi_coll_base_framework.framework_output, "ni_fail_type=%s\n", failtype[ev.ni_fail_type]));
-                }
                 break;
+
+            case PTL_EVENT_LINK:
+                opal_output_verbose(100, ompi_coll_base_framework.framework_output,
+                                    "%s:%d: LINK raised...: %d,%p (%d/%d)\n",
+                                    __FILE__, __LINE__, ev.ni_fail_type,ev.user_ptr,
+                                    mca_coll_portals4_component.me_linked,
+                                    mca_coll_portals4_component.me_to_link);
+                /* Increment linked counter */
+                opal_atomic_add(&mca_coll_portals4_component.me_linked, 1);
+                break;
+
             default:
                 opal_output(ompi_coll_base_framework.framework_output,
                         "Unexpected event of type %d", ev.type);

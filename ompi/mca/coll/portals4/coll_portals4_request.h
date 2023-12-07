@@ -2,7 +2,7 @@
  * Copyright (c) 2013-2015 Sandia National Laboratories.  All rights reserved.
  * Copyright (c) 2015      Los Alamos National Security, LLC. All rights
  *                         reserved.
- * Copyright (c) 2015      Bull SAS.  All rights reserved.
+ * Copyright (c) 2015-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -169,13 +169,12 @@ struct ompi_coll_portals4_request_t {
     } u;
 };
 typedef struct ompi_coll_portals4_request_t ompi_coll_portals4_request_t;
-
 OBJ_CLASS_DECLARATION(ompi_coll_portals4_request_t);
 
 #define OMPI_COLL_PORTALS4_REQUEST_ALLOC(comm, req)                       \
     do {                                                                  \
         opal_free_list_item_t *item;                                      \
-        item = opal_free_list_get(&mca_coll_portals4_component.requests); \
+        item = opal_free_list_wait_mt(&mca_coll_portals4_component.requests); \
                 req = (ompi_coll_portals4_request_t*) item;               \
                 OMPI_REQUEST_INIT(&req->super, false);                    \
                 req->super.req_mpi_object.comm = comm;                    \
@@ -185,7 +184,7 @@ OBJ_CLASS_DECLARATION(ompi_coll_portals4_request_t);
 #define OMPI_COLL_PORTALS4_REQUEST_RETURN(req)                       \
     do {                                                             \
         OMPI_REQUEST_FINI(&request->super);                          \
-        opal_free_list_return(&mca_coll_portals4_component.requests, \
+        opal_free_list_return_mt(&mca_coll_portals4_component.requests, \
                 (opal_free_list_item_t*) req);                       \
     } while (0)
 

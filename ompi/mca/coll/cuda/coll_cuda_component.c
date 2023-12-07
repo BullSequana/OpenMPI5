@@ -6,6 +6,7 @@
  * Copyright (c) 2014-2015 NVIDIA Corporation.  All rights reserved.
  * Copyright (c) 2015      Los Alamos National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2024      BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -86,6 +87,14 @@ static int cuda_register(void)
                                            OPAL_INFO_LVL_2,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &mca_coll_cuda_component.disable_cuda_coll);
+
+    mca_coll_cuda_component.enable_tmp_buf_touch_pages = false;
+    (void) mca_base_component_var_register(&mca_coll_cuda_component.super.collm_version,
+                                           "enable_tmp_buf_touch_pages", "Enable touch pages on tmp buffers allocated by coll/cuda",
+                                           MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0, 
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &mca_coll_cuda_component.enable_tmp_buf_touch_pages);
 
     return OMPI_SUCCESS;
 }

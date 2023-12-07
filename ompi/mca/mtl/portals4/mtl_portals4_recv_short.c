@@ -10,6 +10,7 @@
  * Copyright (c) 2004-2005 The Regents of the University of California.
  *                         All rights reserved.
  * Copyright (c) 2010      Sandia National Laboratories.  All rights reserved.
+ * Copyright (c) 2016-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -162,7 +163,7 @@ ompi_mtl_portals4_recv_short_block_alloc(bool release_on_free)
 static int
 ompi_mtl_portals4_recv_short_block_free(ompi_mtl_portals4_recv_short_block_t *block)
 {
-    if (PTL_INVALID_HANDLE != block->me_h) {
+    if (!PtlHandleIsEqual(PTL_INVALID_HANDLE, block->me_h)) {
         PtlMEUnlink(block->me_h);
         block->me_h = PTL_INVALID_HANDLE;
     }

@@ -25,6 +25,7 @@
  * Copyright (c) 2018-2022 Triad National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2023      Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -808,6 +809,12 @@ int ompi_comm_create_w_info (ompi_communicator_t *comm, ompi_group_t *group, opa
  */
 int ompi_comm_create_group (ompi_communicator_t *comm, ompi_group_t *group, int tag,
                             ompi_communicator_t **newcomm);
+
+int ompi_comm_create_group_with_info (ompi_communicator_t *comm,
+                                      ompi_group_t *group,
+                                      int tag,
+                                      opal_info_t *info,
+                                      ompi_communicator_t **newcomm);
 
 /**
  * Non-collective create communicator based on a group with no base communicator

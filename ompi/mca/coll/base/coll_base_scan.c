@@ -4,6 +4,7 @@
  *                         and Information Science. All rights reserved.
  * Copyright (c) 2018      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
+ * Copyright (c) 2022-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -23,6 +24,7 @@
 #include "ompi/mca/coll/base/coll_base_util.h"
 #include "ompi/mca/pml/pml.h"
 #include "ompi/op/op.h"
+#include "opal/runtime/opal_params.h"
 
 /*
  * ompi_coll_base_scan_intra_linear
@@ -42,6 +44,8 @@ ompi_coll_base_scan_intra_linear(const void *sbuf, void *rbuf, int count,
     ptrdiff_t dsize, gap;
     char *free_buffer = NULL;
     char *pml_buffer = NULL;
+    char *rbuf_free = NULL;
+    char *true_rbuf = rbuf;
 
     /* Initialize */
 
@@ -73,9 +77,31 @@ ompi_coll_base_scan_intra_linear(const void *sbuf, void *rbuf, int count,
         }
         pml_buffer = free_buffer - gap;
 
+        if (opal_scan_use_device_pointers) {
+            /* rbuf cannot be used for "in_place" reduction,
+             * it must be replaced by an host buffer */
+            rbuf_free = malloc(dsize);
+            if (NULL == rbuf_free) {
+                free(free_buffer);
+                return OMPI_ERR_OUT_OF_RESOURCE;
+            }
+            rbuf = rbuf_free - gap;
+
+            if (MPI_IN_PLACE != sbuf) {
+                err = ompi_datatype_copy_content_same_ddt(dtype, count, (char*)rbuf, (char*)sbuf);
+            } else {
+                err = ompi_datatype_copy_content_same_ddt(dtype, count, (char*)rbuf, true_rbuf);
+            }
+            if (MPI_SUCCESS != err) {
+                free(free_buffer);
+                free(rbuf_free);
+                return err;
+            }
+        }
+
         /* Copy the send buffer into the receive buffer. */
 
-        if (MPI_IN_PLACE != sbuf) {
+        else if (MPI_IN_PLACE != sbuf) {
             err = ompi_datatype_copy_content_same_ddt(dtype, count, (char*)rbuf, (char*)sbuf);
             if (MPI_SUCCESS != err) {
                 if (NULL != free_buffer) {
@@ -94,6 +120,9 @@ ompi_coll_base_scan_intra_linear(const void *sbuf, void *rbuf, int count,
             if (NULL != free_buffer) {
                 free(free_buffer);
             }
+            if (NULL != rbuf_free) {
+                free(rbuf_free);
+            }
             return err;
         }
 
@@ -111,9 +140,24 @@ ompi_coll_base_scan_intra_linear(const void *sbuf, void *rbuf, int count,
     /* Send result to next process. */
 
     if (rank < (size - 1)) {
-        return MCA_PML_CALL(send(rbuf, count, dtype, rank + 1,
-                                 MCA_COLL_BASE_TAG_SCAN,
-                                 MCA_PML_BASE_SEND_STANDARD, comm));
+        err = MCA_PML_CALL(send(rbuf, count, dtype, rank + 1,
+                                MCA_COLL_BASE_TAG_SCAN,
+                                MCA_PML_BASE_SEND_STANDARD, comm));
+        if (err != MPI_SUCCESS) {
+            if (NULL != rbuf_free) {
+                free(rbuf_free);
+            }
+            return err;
+        }
+    }
+
+    if (opal_scan_use_device_pointers && 0 != rank) {
+        err = ompi_datatype_copy_content_same_ddt(dtype, count, true_rbuf, (char*)rbuf);
+
+        free(rbuf_free);
+        if (MPI_SUCCESS != err) {
+            return err;
+        }
     }
 
     /* All done */
@@ -163,6 +207,8 @@ int ompi_coll_base_scan_intra_recursivedoubling(
     char *tmpsend_raw = NULL, *tmprecv_raw = NULL;
     int comm_size = ompi_comm_size(comm);
     int rank = ompi_comm_rank(comm);
+    char *true_rbuf = recvbuf;
+    char *rbuf_free = NULL;
 
     OPAL_OUTPUT((ompi_coll_base_framework.framework_output,
                  "coll:base:scan_intra_recursivedoubling: rank %d/%d",
@@ -170,15 +216,35 @@ int ompi_coll_base_scan_intra_recursivedoubling(
     if (count == 0)
         return MPI_SUCCESS;
 
-    if (sendbuf != MPI_IN_PLACE) {
+    ptrdiff_t dsize;
+    ptrdiff_t gap;
+    dsize = opal_datatype_span(&datatype->super, count, &gap);
+
+    if (opal_scan_use_device_pointers && count > 0) {
+        rbuf_free = malloc(dsize);
+        if (NULL == rbuf_free) {
+            err = OMPI_ERR_OUT_OF_RESOURCE;
+            goto cleanup_and_return;
+        }
+        recvbuf = rbuf_free - gap;
+
+        if (sendbuf != MPI_IN_PLACE) {
+            err = ompi_datatype_copy_content_same_ddt(datatype, count, recvbuf, (char *)sendbuf);
+        } else {
+            err = ompi_datatype_copy_content_same_ddt(datatype, count, recvbuf, true_rbuf);
+        }
+        if (MPI_SUCCESS != err) {
+            goto cleanup_and_return;
+        }
+    } else if (sendbuf != MPI_IN_PLACE) {
         err = ompi_datatype_copy_content_same_ddt(datatype, count, recvbuf, (char *)sendbuf);
         if (MPI_SUCCESS != err) { goto cleanup_and_return; }
     }
-    if (comm_size < 2)
-        return MPI_SUCCESS;
+    if (comm_size < 2) {
+        err = MPI_SUCCESS;
+        goto cleanup_and_return;
+    }
 
-    ptrdiff_t dsize, gap;
-    dsize = opal_datatype_span(&datatype->super, count, &gap);
     tmpsend_raw = malloc(dsize);
     tmprecv_raw = malloc(dsize);
     if (NULL == tmpsend_raw || NULL == tmprecv_raw) {
@@ -221,7 +287,14 @@ int ompi_coll_base_scan_intra_recursivedoubling(
         }
     }
 
+    if (opal_scan_use_device_pointers) {
+        err = ompi_datatype_copy_content_same_ddt(datatype, count, true_rbuf, recvbuf);
+    }
+
 cleanup_and_return:
+    if (NULL != rbuf_free) {
+        free(rbuf_free);
+    }
     if (NULL != tmpsend_raw)
         free(tmpsend_raw);
     if (NULL != tmprecv_raw)

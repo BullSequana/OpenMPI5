@@ -2,8 +2,8 @@
  * Copyright (c) 2018-2023 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
- * Copyright (c) 2020      Bull S.A.S. All rights reserved.
  * Copyright (c) 2022      IBM Corporation. All rights reserved
+ * Copyright (c) 2020-2024 BULL S.A.S. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -77,6 +77,17 @@ mca_coll_han_reduce_intra(const void *sbuf,
     ptrdiff_t extent, lb;
     int seg_count = count, w_rank;
     size_t dtype_size;
+
+    if (!mca_coll_han_has_2_levels(han_module)) {
+        opal_output_verbose(30, mca_coll_han_component.han_output,
+                             "han cannot handle reduce with this communicator (not 2 level). Drop HAN support in this communicator and fall back on another component\n");
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automatically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, reduce);
+        return comm->c_coll->coll_reduce(sbuf, rbuf, count, dtype, op, root,
+                                         comm, comm->c_coll->coll_reduce_module);
+    }
 
     /* No support for non-commutative operations */
     if(!ompi_op_is_commute(op)) {
@@ -291,6 +302,17 @@ mca_coll_han_reduce_intra_simple(const void *sbuf,
 
     mca_coll_han_module_t *han_module = (mca_coll_han_module_t *)module;
 
+    if (!mca_coll_han_has_2_levels(han_module)) {
+        opal_output_verbose(30, mca_coll_han_component.han_output,
+                             "han cannot handle reduce with this communicator (not 2 level). Drop HAN support in this communicator and fall back on another component\n");
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automatically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, reduce);
+        return comm->c_coll->coll_reduce(sbuf, rbuf, count, dtype, op, root,
+                                         comm, comm->c_coll->coll_reduce_module);
+    }
+
     /* No support for non-commutative operations */
     if(!ompi_op_is_commute(op)){
         OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
@@ -455,3 +477,293 @@ mca_coll_han_reduce_reproducible(const void *sbuf,
                                            han_module
                                            ->reproducible_reduce_module);
 }
+/* Simple reduce multi level algorithm
+ * Consecutive reduce starting from leaf level to upper level */
+int
+mca_coll_han_reduce_intra_recursive(const void *sbuf,
+                                    void* rbuf,
+                                    int count,
+                                    struct ompi_datatype_t *dtype,
+                                    ompi_op_t *op,
+                                    int root,
+                                    struct ompi_communicator_t *comm,
+                                    mca_coll_base_module_t *module)
+{
+    int w_rank; /* information about the global communicator */
+    const int* root_rank; /* root ranks for both sub-communicators */
+    const int* my_sub_rank; /* ranks of my sub-communicators */
+    /* Uses to store information about tmp_buf*/
+    ptrdiff_t rsize;
+    ptrdiff_t rgap = 0;
+    void * tmp_buf; /* Temporary root doesn't have rbuff, so they use temporary buffer */
+    ompi_communicator_t *sub_comm;
+
+    mca_coll_han_module_t *han_module = (mca_coll_han_module_t *)module;
+    /* No support for non-commutative operations */
+    if(!ompi_op_is_commute(op)){
+        opal_output_verbose(30, mca_coll_han_component.han_output,
+                            "han cannot handle reduce with this operation. Fall back on another component\n");
+        return han_module->previous_reduce(sbuf, rbuf, count, dtype, op, root,
+                                           comm, han_module->previous_reduce_module);
+    }
+
+    /* Create the subcommunicators */
+    if( OMPI_SUCCESS != mca_coll_han_comm_create_multi_level(comm, han_module) ) {
+        opal_output_verbose(30, mca_coll_han_component.han_output,
+                            "han cannot handle reduce with this communicator. Drop HAN support in this communicator and fall back on another component\n");
+        /* HAN cannot work with this communicator so fallback on all collectives */
+        HAN_LOAD_FALLBACK_COLLECTIVES(han_module, comm);
+        return comm->c_coll->coll_reduce(sbuf, rbuf, count, dtype, op, root,
+                                         comm, comm->c_coll->coll_reduce_module);
+    }
+
+    /* No support for imbalanced cases */
+    if (han_module->are_ppn_imbalanced) {
+        opal_output_verbose(30, mca_coll_han_component.han_output,
+                            "han cannot handle reduce with this communicator (imbalanced). Drop HAN support in this communicator and fall back on another component\n");
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automatically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, reduce);
+        return comm->c_coll->coll_reduce(sbuf, rbuf, count, dtype, op, root,
+                                         comm, comm->c_coll->coll_reduce_module);
+    }
+    /* Retrieve ranks information */
+    w_rank = ompi_comm_rank(comm);
+    root_rank = mca_coll_han_get_sub_ranks(han_module, root);
+    my_sub_rank = mca_coll_han_get_sub_ranks(han_module, w_rank);
+
+    /*Leaf level case, each sub_root create a tmp_buf except root
+    which can use rbuf*/
+    if(root_rank[LEAF_LEVEL] == my_sub_rank[LEAF_LEVEL] && w_rank != root) {
+        rsize = opal_datatype_span(&dtype->super, (int64_t)count, &rgap);
+        if (rsize != 0) {
+            tmp_buf = malloc(rsize);
+            if (NULL == tmp_buf) {
+                return OMPI_ERROR;
+            }
+        }
+    } else {
+    /* global root rbuf is valid, local non-root do not need buffers */
+        if (w_rank == root) {
+            tmp_buf = rbuf;
+        } else {
+            tmp_buf = NULL;
+        }
+    }
+    /* Retrieve communicator */
+    sub_comm = han_module->sub_comm[LEAF_LEVEL];
+    /* All rank send their send buffer at their sub_comm root */
+    sub_comm->c_coll->coll_reduce(sbuf, (char *)tmp_buf, count, dtype, op,
+                                  root_rank[LEAF_LEVEL], sub_comm,
+                                  sub_comm->c_coll->coll_reduce_module);
+    /* Then only root_rank[topo_lvl] will do reduce */
+    for(int topo_lvl = LEAF_LEVEL+1; topo_lvl < NB_TOPO_LVL-1; topo_lvl++) {
+        /* If a rank wasn't root in the previous iteration then his job is finished */
+        if(root_rank[topo_lvl-1] != my_sub_rank[topo_lvl-1] ){
+            break;
+        } else {
+            sub_comm = han_module->sub_comm[topo_lvl];
+            if(root_rank[topo_lvl] == my_sub_rank[topo_lvl]) {
+                sub_comm->c_coll->coll_reduce(MPI_IN_PLACE, (char *)tmp_buf,
+                                              count, dtype, op, root_rank[topo_lvl],
+                                              sub_comm, sub_comm->c_coll->coll_reduce_module);
+            } else {
+                sub_comm->c_coll->coll_reduce((char *)tmp_buf, NULL,
+                                            count, dtype, op, root_rank[topo_lvl],
+                                            sub_comm, sub_comm->c_coll->coll_reduce_module);
+            }
+        }
+    }
+    if(root_rank[LEAF_LEVEL] == my_sub_rank[LEAF_LEVEL] && w_rank != root && rsize != 0) {
+      free(tmp_buf);
+    }
+    return OMPI_SUCCESS;
+}
+
+/* Reduce multi_level recursive with reduce scatter at leaf level in order to have more active ranks during the algorithm
+ * with smaller message to send.
+ * Reduce scatter is used to dispatch data at the leaf level, we use reduce to go up to the last topological level and then
+ * data are grouped with a gatherv.
+ * Example on 2 level with 2 nodes and 2 ranks per nodes:
+ * Wrank[buf], root = 0, op=sum
+ *
+ * Node 0         Node 1
+ * 0 [0, 1, 2]    2 [6, 7, 8]
+ *
+ * 1 [3, 4, 5]    3 [9, 10, 11]
+ *
+ * 1) Reduce scatter on leaf level
+ *
+ * 0 [3, 5]     2 [15, 17]
+ *
+ * 1 [7]        3 [19]
+ *
+ * 2) Reduce on other level
+ *
+ * 0 [18, 22]   2 []
+ *
+ * 1 [26]       3 []
+ *
+ * 3) We reach the top level now gatherv
+ *
+ * 0 [18, 22, 26] 2 []
+ *
+ * 1 []           3 []
+ */
+
+int
+mca_coll_han_reduce_intra_balanced_recursive(const void *sbuf,
+                                    void* rbuf,
+                                    int count,
+                                    struct ompi_datatype_t *dtype,
+                                    ompi_op_t *op,
+                                    int root,
+                                    struct ompi_communicator_t *comm,
+                                    mca_coll_base_module_t *module)
+{
+    int w_rank; /* information about the global communicator */
+    const int* root_ranks; /* root ranks for both sub-communicators */
+    const int* my_sub_ranks; /* ranks of my sub-communicators */
+    /* Uses to store information about tmp_buf*/
+    ptrdiff_t rsize;
+    ptrdiff_t rgap = 0;
+    void * tmp_buf = NULL; /* all ranks need it to store reduce scatter result*/
+    ompi_communicator_t *sub_comm;
+
+    mca_coll_han_module_t *han_module = (mca_coll_han_module_t *)module;
+
+    /* No support for non-commutative operations */
+    if(!ompi_op_is_commute(op)){
+        opal_output_verbose(30, mca_coll_han_component.han_output,
+                            "han cannot handle reduce with this operation. Fall back on another component\n");
+        return han_module->previous_reduce(sbuf, rbuf, count, dtype, op, root,
+                                           comm, han_module->previous_reduce_module);
+    }
+
+    /* Create the subcommunicators */
+    if( OMPI_SUCCESS != mca_coll_han_comm_create_multi_level(comm, han_module) ) {
+        opal_output_verbose(30, mca_coll_han_component.han_output,
+                            "han cannot handle reduce with this communicator. Drop HAN support in this communicator and fall back on another component\n");
+        /* HAN cannot work with this communicator so fallback on all collectives */
+        HAN_LOAD_FALLBACK_COLLECTIVES(han_module, comm);
+        return comm->c_coll->coll_reduce(sbuf, rbuf, count, dtype, op, root,
+                                         comm, comm->c_coll->coll_reduce_module);
+    }
+
+    /* No support for imbalanced cases */
+    if (han_module->are_ppn_imbalanced) {
+        opal_output_verbose(30, mca_coll_han_component.han_output,
+                            "han cannot handle reduce with this communicator (imbalanced). Drop HAN support in this communicator and fall back on another component\n");
+        /* Put back the fallback collective support and call it once. All
+         * future calls will then be automatically redirected.
+         */
+        HAN_LOAD_FALLBACK_COLLECTIVE(han_module, comm, reduce);
+        return comm->c_coll->coll_reduce(sbuf, rbuf, count, dtype, op, root,
+                                         comm, comm->c_coll->coll_reduce_module);
+    }
+
+    /* Retrieve ranks information */
+    w_rank = ompi_comm_rank(comm);
+    root_ranks = mca_coll_han_get_sub_ranks(han_module, root);
+    my_sub_ranks = mca_coll_han_get_sub_ranks(han_module, w_rank);
+    
+    /* Retrieve communicator size */
+    sub_comm = han_module->sub_comm[LEAF_LEVEL];
+    int reduce_scatter_size;
+    reduce_scatter_size = ompi_comm_size(sub_comm);
+    
+    /* compute count and displacement */
+    int reduce_scatter_count[reduce_scatter_size];
+    int count_block = count / reduce_scatter_size;
+    int gatherv_displ[reduce_scatter_size];
+    int reduce_scatter_exceed = count % reduce_scatter_size;
+    
+    for (int rank=0; rank<reduce_scatter_size; rank++) {
+        /* the first rank takes the remains data */
+        if (rank == 0 && reduce_scatter_exceed != 0) {
+            reduce_scatter_count[rank] =  reduce_scatter_exceed + count_block;
+        } else {
+            reduce_scatter_count[rank] = count_block;
+        }
+        /* displacement needed for the allgatherv */
+        if(rank > 0){
+            gatherv_displ[rank] = gatherv_displ[rank-1] + reduce_scatter_count[rank-1];
+        } else {
+            gatherv_displ[rank] = 0;
+        }
+    }
+
+    /* Allocate tmp buf */
+    rsize = opal_datatype_span(&dtype->super, (int64_t)  reduce_scatter_count[my_sub_ranks[LEAF_LEVEL]], &rgap);
+    if (rsize != 0) {
+        tmp_buf = malloc(rsize);
+        if (NULL == tmp_buf) {
+            return OMPI_ERROR;
+        }
+    }
+
+    /* MPI_IN_PLACE case for root */
+    if (sbuf == MPI_IN_PLACE) {
+        sbuf = rbuf;
+    }
+    
+    sub_comm->c_coll->coll_reduce_scatter(sbuf,
+                       (char *)tmp_buf,
+                       reduce_scatter_count,
+                       dtype,
+                       op,
+                       sub_comm,
+                       sub_comm->c_coll->coll_reduce_scatter_module);
+
+    /* Now data are already processed and distributed on the leaf level.
+     * We go up to the highest level with normal reduce. */
+    int reduce_count = reduce_scatter_count[my_sub_ranks[LEAF_LEVEL]];
+    for(int topo_lvl = LEAF_LEVEL+1; topo_lvl < NB_TOPO_LVL-1; topo_lvl++) {
+        sub_comm = han_module->sub_comm[topo_lvl];
+        if(root_ranks[topo_lvl] == my_sub_ranks[topo_lvl]) {
+            sub_comm->c_coll->coll_reduce(MPI_IN_PLACE, (char *)tmp_buf,
+                                          reduce_count, dtype, op, root_ranks[topo_lvl],
+                                          sub_comm, sub_comm->c_coll->coll_reduce_module);
+        } else {
+            sub_comm->c_coll->coll_reduce((char *)tmp_buf, NULL,
+                                          reduce_count, dtype, op, root_ranks[topo_lvl],
+                                          sub_comm, sub_comm->c_coll->coll_reduce_module);
+            if (rsize != 0) {
+                free(tmp_buf);
+            }
+            return OMPI_SUCCESS;
+        }
+    }
+    /* Reduce collectives are done, all data are available on the Leaf level where the root is located,
+     * so we just have to collect data on the root.*/
+    sub_comm = han_module->sub_comm[LEAF_LEVEL];
+    if(root_ranks[LEAF_LEVEL] == my_sub_ranks[LEAF_LEVEL]) {
+        sub_comm->c_coll->coll_gatherv((char *)tmp_buf,
+                                       reduce_count,
+                                       dtype,
+                                       rbuf,
+                                       reduce_scatter_count,
+                                       gatherv_displ,
+                                       dtype,
+                                       root_ranks[LEAF_LEVEL],
+                                       sub_comm,
+                                       sub_comm->c_coll->coll_gatherv_module);
+    } else {
+        sub_comm->c_coll->coll_gatherv((char *)tmp_buf,
+                                       reduce_count,
+                                       dtype,
+                                       NULL,
+                                       NULL,
+                                       NULL,
+                                       NULL,
+                                       root_ranks[LEAF_LEVEL],
+                                       sub_comm,
+                                       sub_comm->c_coll->coll_gatherv_module);
+    }
+    if (rsize != 0) {
+        free(tmp_buf);
+    }
+    return OMPI_SUCCESS;
+}
+
