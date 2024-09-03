@@ -103,16 +103,6 @@ EXTRA_DIST = \
 	platform/mellanox/optimized \
 	platform/mellanox/optimized.conf \
 	platform/bull/optimized \
-	platform/bull/optimized.conf \
-	platform/bull/profile/ib_optimized.core.conf \
-	platform/bull/profile/ib_tuned_collectives.amd.rules \
-	platform/bull/profile/bxi_optimized.core.conf \
-	platform/bull/profile/bxi_optimized.knl.conf \
-	platform/bull/profile/bxi_optimized.amd.conf \
-	platform/bull/profile/bxi_optimized.pml_bxi_neba.conf \
-	platform/bull/profile/bxi_tuned_collectives.knl.rules \
-	platform/bull/profile/bxi_tuned_collectives.amd.rules \
-	platform/bull/profile/bxi_bullnbc_collectives.knl.rules \
-	platform/bull/profile/bxi_bullnbc_collectives.amd.rules
+	platform/bull/optimized.conf
 
 dist_opaldata_DATA = openmpi-valgrind.supp
