@@ -1498,11 +1498,6 @@ AC_CONFIG_FILES([
     contrib/dist/mofed/debian/changelog
     contrib/dist/mofed/debian/control
     contrib/dist/mofed/debian/copyright:LICENSE
-    contrib/platform/bull/profile/ib_optimized.core.conf
-    contrib/platform/bull/profile/bxi_optimized.core.conf
-    contrib/platform/bull/profile/bxi_optimized.knl.conf
-    contrib/platform/bull/profile/bxi_optimized.amd.conf
-    contrib/platform/bull/profile/bxi_optimized.pml_bxi_neba.conf
 
     3rd-party/Makefile
 
